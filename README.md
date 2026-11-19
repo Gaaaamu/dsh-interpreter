@@ -1,6 +1,8 @@
 # dsh-interpreter
 
-Provide a condensed view for AI-generated content. It extracts and presents core conclusions alongside the original response, enhancing reading efficiency.
+在 DSH 每条回答下方生成一个独立的「速览」摘要区块，提炼核心结论与要点，在不修改原文、不占用主对话上下文的前提下提升阅读效率。
+
+Generates an independent "Condensed View" summary block below each DSH response, extracting core conclusions and key points to improve reading efficiency without modifying the original text or consuming main conversation context.
 
 [中文](#中文) · [English](#english)
 
@@ -9,83 +11,137 @@ Provide a condensed view for AI-generated content. It extracts and presents core
 ## 中文
 
 ### 功能概述
-AI 模型生成的回答往往包含大量过程性描述、验证信息或冗余的交互用语，导致关键信息提取效率较低。`dsh-interpreter` 通过在回答下方生成一个独立的“速览”块，直接呈现结论和要点，实现快速扫描与信息重组。
 
-### 核心优势
-* **高效摘要**：在保留原文的同时，提供约原文三分之一长度的结论与要点速览。
-* **信息完整**：表格、代码、命令及路径等关键技术信息保持原样，不做改写。
-* **独立处理**：基于独立的模型调用，不干扰主对话的上下文或缓存策略。
-* **样式集成**：样式完全遵循 DSH Markdown 主题，提供一致的阅读体验。
+擅长执行任务的模型往往会在回答中包含大量推理过程、验证细节与交互寒暄，导致核心结论被拉长。`dsh-interpreter` 通过旁路调用，在每条回答正下方追加一段约原文三分之一长度的「速览」摘要，帮助用户先把握结论（能否实现、如何操作、注意事项），再按需核对原文细节。
 
-### 使用指南
-#### 安装
-1. **插件市场（推荐）**：前往「设置」→「插件」→「市场」，搜索 `dsh-interpreter` 进行安装。
-2. **手动安装**：在 profile 的 `package.json` 中配置依赖，并将其添加到 `dsh.profile.bundles`，随后重启 DSH。
+### 核心特性
 
-#### 配置与模式
-初次安装时，插件处于**手动模式**。
-* **手动模式**：仅在点击每条回答下方的「› 速览」时生成摘要。
-* **全部模式**：自动为每一条回答生成摘要。
-* **本会话模式**：仅在白名单会话中自动生成摘要。
+* **结论先行，保留精确项**：输出结论加最多 5 条要点；表格、代码块、命令行、文件路径、数字与报错信息保持原样，不做改写。
+* **旁路运行，零上下文侵入**：基于已落盘的回答发起独立调用，输出仅渲染于前端界面。不修改主模型的系统提示词与工具定义，不写入会话日志（Session Log），不影响长上下文与 Prefix 缓存。
+* **独立模型路由**：摘要生成可指定与主对话不同的模型（例如主对话使用强编码模型，摘要侧选用表达与概括能力更强的模型），互不干扰。
+* **原生样式融合**：排版、字号、代码块、表格与链接样式直接复用 DSH 主题变量，随宿主主题与字号设置同步变化；右下角实时显示本次摘要消耗的 Token 数量（悬停可查看输入 / 输出明细）。
 
-配置结果将持久化保存在 profile 目录下的 `dsh-interpreter.json` 文件中。
+### 安装与使用
 
-### 调参说明
-可在 `cordis.patch.yml` 中通过 `- id: interpreter` 的 `config` 字段进行调整：
+#### 1. 安装
+* **插件市场（推荐）**：打开 DSH，前往「设置」→「插件」→「市场」，搜索 `dsh-interpreter`（或「速览」），安装后按提示重载页面。
+* **手动安装**：在对应 Profile 的 `package.json` 中添加依赖并声明至 `dsh.profile.bundles`，随后重启 DSH：
+  ```json
+  {
+    "dependencies": { "dsh-interpreter": "link:D:/path/to/dsh-interpreter" },
+    "dsh": { "profile": { "bundles": ["dsh-interpreter"] } }
+  }
+  ```
+
+#### 2. 首次配置与运行模式
+插件安装后默认处于**手动模式**，不会自动触发调用产生费用：
+1. 点击回答下方的「› 速览」展开区块，在右上角「模型」下拉菜单中选择当前环境中可用的 `provider / model`。
+2. 根据使用习惯切换运行模式（配置持久化保存在 Profile 目录的 `dsh-interpreter.json` 中）：
+
+| 模式 | 行为说明 |
+| :--- | :--- |
+| `手动`（默认） | 不自动生成，仅在点击「› 速览」时触发请求 |
+| `本会话` | 仅对加入白名单的会话自动生成摘要 |
+| `全部` | 为所有符合长度条件的回答自动生成摘要 |
+
+### 参数配置
+
+可在 `cordis.patch.yml` 的 `- id: interpreter` 下通过 `config` 字段调整参数（优先级：内置默认 < YAML `config` < `dsh-interpreter.json` 界面配置）：
 
 | 参数 | 默认值 | 说明 |
 | :--- | :--- | :--- |
-| `minChars` | 400 | 短于此长度的回答不进行摘要 |
-| `maxChars` | 40000 | 超出此长度的回答不进行摘要 |
-| `ratio` | 0.35 | 目标摘要长度占比 |
-| `temperature` | 0.3 | 模型生成时的随机度 |
+| `minChars` | `400` | 触发摘要的最小字符数，短于该长度的回答将被跳过 |
+| `maxChars` | `40000` | 触发摘要的最大字符数，超出该长度的回答将被跳过 |
+| `ratio` | `0.35` | 摘要目标字数占原文长度的比例 |
+| `temperature` | `0.3` | 摘要生成的采样温度 |
+| `prompt` | 内置 | 摘要改写指令，可通过自定义指令调整输出风格 |
 
-### 关于模型选择
-摘要生成更依赖模型的表达与信息重组能力。建议在主对话中使用逻辑强、干活稳的模型，而在摘要侧选择表达能力强、擅长先讲结论的模型。
+### 模型选择建议
 
-### 其他说明
-* **成本**：摘要生成属于独立模型调用，费用根据模型提供商标准计算。
-* **无侵入性**：原回答内容不被修改，Session 日志不新增事件，摘要仅呈现于界面。
+摘要质量取决于模型的**信息重组与表达能力**，而非单纯的推理或编码能力。参考 [Artificial Analysis AA-PersonalityBench](https://artificialanalysis.ai/evaluations/aa-personalitybench/traits/metaphorical) 中的 `Metaphorical`、`Answer First`、`Bottom-Line Summary` 与 `Scannable` 等指标，建议采用「主对话负责精确执行，旁路模型负责结论提炼与高可读性表达」的组合方式。
+
+### 费用与隐私说明
+
+* **计费与缓存**：每次生成对应一次模型调用；若首次生成结果超出字数预算的 1.5 倍，插件会基于草稿自动执行二次压缩（界面显示的 Token 数为两次调用之和）。生成结果按「会话 + 轮次序号」缓存，重复展开不重复计费；切换模型后缓存自动清空。
+* **数据边界**：除将当前轮次已生成的回答发送至用户所选的摘要模型接口外，不向任何第三方上传数据。
+
+### 迭代计划 (Roadmap)
+
+1. **可视化设置页**：支持在前端界面直接调整 `minChars`、`maxChars`、`ratio`、`temperature` 及编辑提示词，无需修改 YAML。
+2. **场景化预设 (Presets)**：将「提示词 + 摘要模型 + 目标长度」封装为预设，支持按模型特性与任务类型（代码配置、概念解释、数据分析）灵活匹配，并逐步支持自动匹配。
+3. **多视角快捷切换**：在同一摘要栏提供多种预设入口（如类比解析、场景化叙述、配合可视化技能生成图表等）。
+4. **预设导入与共享**：支持以 JSON 格式导入/导出预设，并内置常用预设模板。
+
+### 许可证
+
+MIT
 
 ---
 
 ## English
 
 ### Overview
-AI models often generate responses filled with procedural descriptions, verification details, and pleasantries, which can bury key conclusions. `dsh-interpreter` improves efficiency by generating an independent "condensed view" block below each response, highlighting conclusions and core points for quick scanning.
 
-### Core Features
-* **Efficient Summarization**: Provides a concise summary—approximately one-third the length of the original—while keeping the full original text intact.
-* **Information Integrity**: Keeps tables, code, commands, and paths unchanged, ensuring technical precision.
-* **Independent Processing**: Uses separate model calls, avoiding any impact on the main conversation's context or caching strategies.
-* **Seamless Integration**: Follows DSH Markdown styling, ensuring consistent visual integration with the UI.
+Models optimized for complex tasks often include extensive reasoning steps, verification logs, and conversational filler in their replies, burying the actual takeaway. `dsh-interpreter` makes a side-channel model call to append a concise "Condensed View" block (roughly one-third the original length) directly below each response. It lets you grasp the conclusion immediately—whether it works, how to do it, and what pitfalls to watch out for—while keeping the original response intact for verification.
 
-### Usage
-#### Installation
-1. **Plugin Market (Recommended)**: Go to Settings → Plugins → Market, search for `dsh-interpreter`, and install.
-2. **Manual Installation**: Add the dependency to your profile's `package.json` and include it in `dsh.profile.bundles`, then restart DSH.
+### Key Features
 
-#### Configuration and Modes
-The plugin starts in **manual mode**:
-* **Manual Mode**: Generates a summary only when you click "› 速览" under a response.
-* **All Mode**: Automatically generates summaries for every response.
-* **This Session Mode**: Automatically generates summaries only for sessions on the allow-list.
+* **Conclusion-First with Technical Fidelity**: Presents a bottom-line conclusion followed by up to five key bullet points. Tables, code blocks, CLI commands, file paths, numbers, and error strings are preserved verbatim.
+* **Non-Intrusive Side-Channel Execution**: Reads the finalized response from the session log and renders the output only in the UI. It never alters the main model's system prompt or tool definitions, adds no events to the session log, and preserves main context and prefix caching.
+* **Independent Model Routing**: Use a dedicated model for summarization without affecting the main conversation's model selection.
+* **Native UI Integration**: Typography, inline-code chips, tables, and link styles inherit directly from DSH theme tokens. A token counter in the bottom-right corner reports the exact cost of each rewrite (hover for input / output / total breakdown).
 
-Settings are persisted in `dsh-interpreter.json` within the profile directory.
+### Installation & Usage
 
-### Tuning
-Adjust parameters via the `- id: interpreter` section in `cordis.patch.yml`:
+#### 1. Install
+* **Plugin Market (Recommended)**: Go to Settings → Plugins → Market, search for `dsh-interpreter`, install, and reload the page.
+* **Manual Installation**: Add the dependency to your profile's `package.json`, list it under `dsh.profile.bundles`, and restart DSH:
+  ```json
+  {
+    "dependencies": { "dsh-interpreter": "link:D:/path/to/dsh-interpreter" },
+    "dsh": { "profile": { "bundles": ["dsh-interpreter"] } }
+  }
+  ```
+
+#### 2. Initial Setup & Modes
+The plugin defaults to **Manual** mode so no calls are made automatically upon installation:
+1. Click "› 速览" below a response and open the "模型" (Model) menu to select an available `provider / model` exposed by `ctx.llm`.
+2. Switch modes as needed (persisted in `dsh-interpreter.json` inside your profile directory):
+
+| Mode | Behavior |
+| :--- | :--- |
+| `手动` (Manual, default) | Generates a summary only when clicked |
+| `本会话` (This Session) | Automatically summarizes responses in allow-listed sessions |
+| `全部` (All) | Automatically summarizes every eligible response |
+
+### Configuration
+
+Parameters can be tuned under `config` of `- id: interpreter` in `cordis.patch.yml` (precedence: built-in defaults < YAML `config` < `dsh-interpreter.json`):
 
 | Key | Default | Description |
 | :--- | :--- | :--- |
-| `minChars` | 400 | Minimum length to trigger summary |
-| `maxChars` | 40000 | Maximum length to trigger summary |
-| `ratio` | 0.35 | Target length ratio |
-| `temperature` | 0.3 | Model randomness |
+| `minChars` | `400` | Minimum character count required to trigger summarization |
+| `maxChars` | `40000` | Maximum character count eligible for summarization |
+| `ratio` | `0.35` | Target summary length as a ratio of the original response |
+| `temperature` | `0.3` | Sampling temperature for the rewrite call |
+| `prompt` | Built-in | Custom rewrite instruction to adjust the output style |
 
 ### Model Selection
-Summarization relies on a model's ability to restructure and communicate information effectively. It is recommended to use a robust model for the main dialogue, and a model with strong summarizing and metaphorical capabilities for the condensed view.
 
-### Notes
-* **Costs**: Summarization is a separate model call and is billed according to your model provider's pricing.
-* **Non-intrusive**: The original response is never modified; no events are added to the session log, and summaries are displayed only in the UI.
+Effective summarization relies on **explanatory clarity and information restructuring** rather than raw coding or reasoning capability. Referring to traits like `Metaphorical`, `Answer First`, `Bottom-Line Summary`, and `Scannable` on [AA-PersonalityBench by Artificial Analysis](https://artificialanalysis.ai/evaluations/aa-personalitybench/traits/metaphorical), we recommend pairing a task-focused model for the main dialogue with an expressive, conclusion-first model for the condensed view.
+
+### Cost & Privacy
+
+* **Billing & Caching**: Each rewrite is a standalone model call. If the initial draft exceeds 1.5× the target length budget, a second compression pass is executed automatically (the displayed token usage reflects the sum of both calls). Results are cached by session and sequence number; reopening a block is free, and switching models clears the cache.
+* **Data Boundary**: No data is uploaded anywhere except sending the finalized turn response to your configured rewrite provider.
+
+### Roadmap
+
+1. **Visual Settings Page**: Adjust `minChars`, `maxChars`, `ratio`, `temperature`, and custom prompts directly in the UI without editing YAML.
+2. **Scenario Presets**: Bundle "prompt + model + target length" into presets tailored to specific model behaviors or task types (code/config, conceptual explanation, data analysis), with optional auto-matching.
+3. **One-Click Alternate Views**: Expose quick preset switches on the summary bar (e.g., analogy-based explanation, narrative walkthrough, or visual diagrams).
+4. **Preset Sharing**: Import/export presets as JSON and ship curated built-in templates.
+
+### License
+
+MIT
