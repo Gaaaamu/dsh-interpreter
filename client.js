@@ -232,6 +232,20 @@ window.__ModuleLoader__.load({
     const SEPARATOR = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
 
     /**
+     * The target a link may keep. The rewrite repeats whatever the answer said,
+     * and the answer may repeat a web page, so only the web and plain paths get
+     * through: `javascript:`, `data:`, `vbscript:` and any other scheme are
+     * dropped. A single letter before the colon is a Windows drive, not a scheme.
+     * @param href - the link target as written.
+     * @returns the target, or null when the link should render as plain text.
+     */
+    function safeHref(href) {
+      const scheme = /^\s*([a-z][a-z0-9+.-]*):/i.exec(href);
+      if (scheme === null || scheme[1].length === 1) return href;
+      return /^(https?|file|mailto)$/i.test(scheme[1]) ? href : null;
+    }
+
+    /**
      * Split one inline run into text, code, bold, italic and link nodes.
      * @param text - the raw run.
      * @param prefix - node key prefix.
@@ -250,6 +264,12 @@ window.__ModuleLoader__.load({
         else if (token.startsWith('`')) out.push(h('code', { key }, token.slice(1, -1)));
         else if (token.startsWith('[')) {
           const link = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(token);
+          if (safeHref(link[2]) === null) {
+            // A target nobody should follow keeps its words and loses the link.
+            out.push(link[1]);
+            last = match.index + used;
+            continue;
+          }
           const external = /^https?:/i.test(link[2]);
           // Only a web target opens a new tab; a path stays where it is, exactly as
           // the answer above treats the two.
@@ -376,12 +396,16 @@ window.__ModuleLoader__.load({
       return h('p', { key }, inline(block.text, key));
     }
 
-    /** Ask the Host for the readable rewrite of one finished Turn. */
-    function requestRewrite(sessionId, seq, force) {
+    /**
+     * Ask the Host for the readable rewrite of one finished Turn.
+     * @param auto - true when the mode asked, not the reader; the Host then
+     *   declines answers that were committed before automation was switched on.
+     */
+    function requestRewrite(sessionId, seq, force, auto) {
       return fetch(ROUTE, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sessionId, seq, force }),
+        body: JSON.stringify({ sessionId, seq, force, auto }),
       }).then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();
@@ -518,6 +542,8 @@ window.__ModuleLoader__.load({
       const [gate, setGate] = useState(null);
       /** Set when the reader asks for this Turn by hand. */
       const [wanted, setWanted] = useState(false);
+      /** Set when the Host says this answer predates automation: it waits for a click. */
+      const [historic, setHistoric] = useState(false);
       const [modeOpen, setModeOpen] = useState(false);
       const [modeHover, setModeHover] = useState(null);
       const [modeError, setModeError] = useState('');
@@ -532,7 +558,7 @@ window.__ModuleLoader__.load({
       const [pickerError, setPickerError] = useState('');
       const [iconHover, setIconHover] = useState(false);
       const usable = typeof sessionId === 'string' && typeof seq === 'number';
-      const auto = gate !== null
+      const auto = gate !== null && !historic
         && (gate.mode === 'global' || (gate.mode === 'session' && gate.sessions.includes(sessionId)));
       /** Nothing is rewritten until either the mode asks for it or the reader does. */
       const started = auto || wanted;
@@ -643,9 +669,11 @@ window.__ModuleLoader__.load({
             if (result.mode === 'manual') setOpen(false);
           })
           .catch(() => {
-            // Unreadable settings are not worth losing the feature over: the old
-            // behaviour, every answer gets a block, is the safer stand-in.
-            if (live) setGate({ mode: 'global', sessions: [] });
+            // Unreadable settings must not start spending: fall back to the
+            // default, a folded line that waits for a click.
+            if (!live) return;
+            setGate({ mode: 'manual', sessions: [] });
+            setOpen(false);
           });
         return () => { live = false; };
       }, [usable, sessionId]);
@@ -654,9 +682,15 @@ window.__ModuleLoader__.load({
         if (!usable || !started) return undefined;
         let live = true;
         setPhase({ kind: 'loading' });
-        requestRewrite(sessionId, seq, attempt > 0)
+        requestRewrite(sessionId, seq, attempt > 0, !wanted)
           .then((result) => {
             if (!live) return;
+            if (result.status === 'skip' && result.reason === 'history') {
+              // Written before automation was on: fold back to the manual line.
+              setHistoric(true);
+              setOpen(false);
+              return;
+            }
             if (result.status === 'ok') setPhase({ kind: 'ready', text: result.text, usage: result.usage });
             else if (result.status === 'skip') setPhase({ kind: result.reason === 'too-long' ? 'toolong' : 'none' });
             else setPhase({ kind: 'failed', message: readableError(result.message ?? '') });

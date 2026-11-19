@@ -41,8 +41,10 @@ Generates an independent "Condensed View" summary block below each DSH response,
 | 模式 | 行为说明 |
 | :--- | :--- |
 | `手动`（默认） | 不自动生成，仅在点击「› 速览」时触发请求 |
-| `本会话` | 仅对加入白名单的会话自动生成摘要 |
-| `全部` | 为所有符合长度条件的回答自动生成摘要 |
+| `本会话` | 仅对加入白名单的会话中，加入之后的新回答自动生成摘要 |
+| `全部` | 开启之后符合长度条件的新回答自动生成摘要 |
+
+自动模式只管**开启之后**新写出来的回答：翻开旧会话、或重启 DSH 之后，以前的回答仍然只是一行「› 速览」，点了才生成，不会一口气补跑整段历史。同一时间最多 2 个改写在跑，其余排队。
 
 ### 参数配置
 
@@ -111,8 +113,10 @@ The plugin defaults to **Manual** mode so no calls are made automatically upon i
 | Mode | Behavior |
 | :--- | :--- |
 | `手动` (Manual, default) | Generates a summary only when clicked |
-| `本会话` (This Session) | Automatically summarizes responses in allow-listed sessions |
-| `全部` (All) | Automatically summarizes every eligible response |
+| `本会话` (This Session) | Automatically summarizes new responses in allow-listed sessions, from the moment they were added |
+| `全部` (All) | Automatically summarizes every eligible new response after it is switched on |
+
+Automatic modes only cover answers written **after** they were switched on: opening an old session, or restarting DSH, leaves earlier answers as a folded 「› 速览」 line that waits for a click, so history is never rewritten in bulk. At most two rewrites run at once; the rest queue.
 
 ### Configuration
 

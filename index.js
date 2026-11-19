@@ -34,6 +34,9 @@ const MAX_BODY_BYTES = 4096
 /** Cached rewrites kept in memory; the oldest entry is dropped past this. */
 const MAX_CACHE_ENTRIES = 500
 
+/** Rewrites allowed to talk to a model at once; the rest wait their turn. */
+const MAX_CONCURRENT_REWRITES = 2
+
 /** Default rewrite instruction; overridable through `config.prompt`. */
 const DEFAULT_PROMPT = `你把技术回答改写成「速览」。读者聪明但不熟悉这块，他只想知道：结论是什么、要不要动手、动手做什么、有什么坑。
 
@@ -82,18 +85,30 @@ const DEFAULTS = {
 export const inject = ['webServer', 'llm', 'sessions']
 
 /**
- * Last text block set of the assistant answer committed at or before `upto`.
+ * Last text block set of the assistant answer committed in the Turn that closes
+ * at `upto`. The search never leaves that Turn: a Turn that answered no text
+ * must not borrow the answer of the one before it.
  * @param session - live session owning the Turn.
  * @param upto - the Turn's closing sequence.
- * @returns the answer text, or undefined when the Turn answered no text.
+ * @returns the answer text and when it was committed, or undefined when the
+ *   Turn answered no text.
  */
-function answerTextAt(session, upto) {
+function answerAt(session, upto) {
   const nodes = session.surface.nodes
+  /** The Turn number, taken from the latest event at or before `upto` that names one. */
+  let turn
   for (let index = nodes.length - 1; index >= 0; index -= 1) {
     const seq = nodes[index]
     if (seq === undefined || seq > upto) continue
     const event = session.eventAt(seq)
-    if (event === undefined || event.type !== 'assistant/message') continue
+    if (event === undefined) continue
+    const owner = event.data?.turn
+    if (typeof owner === 'number') {
+      if (turn === undefined) turn = owner
+      else if (owner !== turn) return undefined
+    }
+    if (event.type === 'turn/start') return undefined
+    if (event.type !== 'assistant/message') continue
     const message = session.deriveEventMessage(event)
     const content = message?.content
     if (!Array.isArray(content)) continue
@@ -102,7 +117,7 @@ function answerTextAt(session, upto) {
       .map((block) => block.text)
       .join('\n\n')
       .trim()
-    if (text !== '') return text
+    if (text !== '') return { text, time: event.time }
   }
   return undefined
 }
@@ -174,10 +189,44 @@ export function apply(ctx, config) {
     return { ...DEFAULTS, ...patch, ...saved }
   }
 
+  /** Answers committed before this moment were not written while the bundle ran. */
+  const startedAt = Date.now()
+
+  /**
+   * Automatic modes only reach answers committed after they were switched on,
+   * and after this process started: opening an old Session must not rewrite
+   * its whole history.
+   */
+  const autoSince = async () => {
+    const options = await settings()
+    return Math.max(startedAt, typeof options.autoSince === 'number' ? options.autoSince : 0)
+  }
+
   /** Rewrite results, including the decisions not to rewrite. */
   const cache = new Map()
   /** Rewrites already running, so a second request joins instead of paying twice. */
   const running = new Map()
+
+  /** Model calls in flight, and the rewrites waiting for a free slot. */
+  let active = 0
+  const waiting = []
+
+  /** Run one rewrite once a slot is free, so a long Session cannot fire dozens at once. */
+  async function limited(signal, task) {
+    while (active >= MAX_CONCURRENT_REWRITES) await new Promise((wake) => waiting.push(wake))
+    if (signal.aborted) {
+      // This waiter was woken for a slot it will not use; pass it on.
+      waiting.shift()?.()
+      throw new Error('aborted before it started')
+    }
+    active += 1
+    try {
+      return await task()
+    } finally {
+      active -= 1
+      waiting.shift()?.()
+    }
+  }
 
   const remember = (key, result) => {
     cache.set(key, result)
@@ -277,23 +326,33 @@ export function apply(ctx, config) {
   }
 
   /** Resolve one request, sharing in-flight work and caching settled results. */
-  async function resolve(sessionId, seq, force, signal) {
+  async function resolve(sessionId, seq, force, auto, signal) {
     const key = `${sessionId}:${seq}`
     if (force !== true && cache.has(key)) return cache.get(key)
     const joined = running.get(key)
     if (joined !== undefined) return joined
+    if (auto === true) {
+      // Decided per request and never cached: the same Turn may still be asked
+      // for by hand, and that request must go through.
+      const session = ctx.sessions.get(sessionId)
+      const answer = session === undefined ? undefined : answerAt(session, seq)
+      if (answer !== undefined && !(typeof answer.time === 'number' && answer.time >= await autoSince())) {
+        return { status: 'skip', reason: 'history' }
+      }
+    }
     const pending = (async () => {
       try {
         const session = ctx.sessions.get(sessionId)
         if (session === undefined) return { status: 'error', message: 'that Session is not loaded' }
-        const text = answerTextAt(session, seq)
-        if (text === undefined) return { status: 'skip', reason: 'no-answer' }
+        const answer = answerAt(session, seq)
+        if (answer === undefined) return { status: 'skip', reason: 'no-answer' }
+        const text = answer.text
         const options = await settings()
         if (text.length < options.minChars) return { status: 'skip', reason: 'too-short' }
         if (text.length > options.maxChars) return { status: 'skip', reason: 'too-long' }
         // The reader meets this once, then picks a model from the block itself.
         if (options.provider === '' || options.model === '') return { status: 'error', message: 'no configured model' }
-        const outcome = await rewrite(text, sessionId, options, signal)
+        const outcome = await limited(signal, () => rewrite(text, sessionId, options, signal))
         return { status: 'ok', text: outcome.text, usage: outcome.usage }
       } catch (error) {
         return { status: 'error', message: error instanceof Error ? error.message : String(error) }
@@ -417,6 +476,16 @@ export function apply(ctx, config) {
         return
       }
       await ready
+      // Turning automation on, or widening it to another Session, starts its
+      // clock now: only answers committed from here on are rewritten unasked.
+      if (next.mode !== undefined || next.sessions !== undefined) {
+        const before = await settings()
+        const wasMode = MODES.includes(before.mode) ? before.mode : DEFAULTS.mode
+        const nowMode = next.mode ?? wasMode
+        const had = Array.isArray(before.sessions) ? before.sessions : []
+        const widened = (next.sessions ?? []).some((id) => !had.includes(id))
+        if (nowMode !== 'manual' && (nowMode !== wasMode || widened)) next.autoSince = Date.now()
+      }
       saved = { ...saved, ...next }
       try {
         await writeFile(CONFIG_FILE, `${JSON.stringify(saved, null, 2)}\n`, 'utf8')
@@ -460,7 +529,7 @@ export function apply(ctx, config) {
         reply(res, 400, { status: 'error', message: 'sessionId and seq are required' })
         return
       }
-      const result = await resolve(sessionId, seq, body?.force, lifetime.signal)
+      const result = await resolve(sessionId, seq, body?.force, body?.auto, lifetime.signal)
       if (!res.writableEnded) reply(res, 200, result)
     },
   }), 'interpreter: rewrite route')
