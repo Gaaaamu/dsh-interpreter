@@ -36,11 +36,11 @@ Generates an independent "Condensed View" summary block below each DSH response,
 #### 2. 首次配置与运行模式
 插件安装后默认处于**手动模式**，不会自动触发调用产生费用：
 1. 点击回答下方的「› 速览」展开区块，在右上角「模型」下拉菜单中选择当前环境中可用的 `provider / model`。
-2. 根据使用习惯切换运行模式（配置持久化保存在 Profile 目录的 `dsh-interpreter.json` 中）：
+2. 根据使用习惯切换运行模式（配置持久化保存在当前 Profile 目录（DSH 提供的 `profileContext.dir`）下的 `dsh-interpreter.json` 中，目录不存在会自动创建；文件无法读取时回退到手动模式）：
 
 | 模式 | 行为说明 |
 | :--- | :--- |
-| `手动`（默认） | 不自动生成，仅在点击「› 速览」时触发请求 |
+| `手动`（默认） | 不自动生成，仅在点击「› 速览」时触发请求。在「本会话」模式下切换到它，只把当前会话移出白名单，其他会话不受影响 |
 | `本会话` | 仅对加入白名单的会话中，加入之后的新回答自动生成摘要 |
 | `全部` | 开启之后符合长度条件的新回答自动生成摘要 |
 
@@ -108,11 +108,11 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 #### 2. Initial Setup & Modes
 The plugin defaults to **Manual** mode so no calls are made automatically upon installation:
 1. Click "› 速览" below a response and open the "模型" (Model) menu to select an available `provider / model` exposed by `ctx.llm`.
-2. Switch modes as needed (persisted in `dsh-interpreter.json` inside your profile directory):
+2. Switch modes as needed (persisted in `dsh-interpreter.json` in the launched profile's directory, DSH's `profileContext.dir`, created if missing; if the file cannot be read, the plugin falls back to manual mode):
 
 | Mode | Behavior |
 | :--- | :--- |
-| `手动` (Manual, default) | Generates a summary only when clicked |
+| `手动` (Manual, default) | Generates a summary only when clicked. Under This Session mode, choosing it only removes the current session from the allow-list |
 | `本会话` (This Session) | Automatically summarizes new responses in allow-listed sessions, from the moment they were added |
 | `全部` (All) | Automatically summarizes every eligible new response after it is switched on |
 

@@ -442,13 +442,27 @@ window.__ModuleLoader__.load({
       });
     }
 
-    /** Remember the chosen mode, and which Sessions opted in. */
-    function saveGate(mode, sessions) {
+    /**
+     * Change the mode and the allow-list. Only the change travels, never the
+     * whole list: every block holds its own copy, and a stale copy sent back
+     * would wipe out what another block added.
+     * @param change - `{ mode?, addSessions?, removeSessions? }`.
+     */
+    function saveGate(change) {
       return fetch(CONFIG, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ mode, sessions }),
+        body: JSON.stringify(change),
       }).then((response) => response.json());
+    }
+
+    /**
+     * The mode as it applies to one Session: 本会话 only when this Session is on
+     * the list; a Session left off it is, for itself, 手动.
+     */
+    function effectiveMode(gate, sessionId) {
+      if (gate.mode === 'session') return gate.sessions.includes(sessionId) ? 'session' : 'manual';
+      return gate.mode === 'global' ? 'global' : 'manual';
     }
 
     /** 12431 is harder to take in at a glance than 12.4k. */
@@ -622,21 +636,42 @@ window.__ModuleLoader__.load({
           });
       };
 
-      /** The mode menu writes straight through; a failed save puts the old one back. */
-      const chooseMode = (mode) => {
+      /**
+       * The mode menu writes straight through; a failed save puts the old one back.
+       * 全部 and 本会话 switch automation on (本会话 for this Session). 手动 undoes
+       * whichever of the two this Session is under: off the list while the mode
+       * is 本会话, every Session back to manual while it is 全部.
+       */
+      const chooseMode = (pick) => {
         setModeOpen(false);
         setModeError('');
         const previous = gate;
-        const sessions = mode === 'session'
-          ? [...new Set([...previous.sessions, sessionId])]
-          : previous.sessions;
-        setGate({ mode, sessions });
+        let change;
+        let local;
+        if (pick === 'global') {
+          change = { mode: 'global' };
+          local = { mode: 'global', sessions: previous.sessions };
+        } else if (pick === 'session') {
+          change = { mode: 'session', addSessions: [sessionId] };
+          local = { mode: 'session', sessions: [...new Set([...previous.sessions, sessionId])] };
+        } else if (previous.mode === 'session') {
+          change = { removeSessions: [sessionId] };
+          local = { mode: 'session', sessions: previous.sessions.filter((id) => id !== sessionId) };
+        } else {
+          change = { mode: 'manual' };
+          local = { mode: 'manual', sessions: previous.sessions };
+        }
+        setGate(local);
         // Switching this Turn to an automatic mode fills in the block the reader is
         // looking at; earlier Turns keep whatever they already had.
-        if (!started && mode !== 'manual') setWanted(true);
-        saveGate(mode, sessions)
+        if (!started && pick !== 'manual') setWanted(true);
+        saveGate(change)
           .then((result) => {
             if (result.status !== 'ok') throw new Error(result.message ?? '没保存上');
+            // The Host answers with the whole gate, other blocks' changes included.
+            if (typeof result.mode === 'string' && Array.isArray(result.sessions)) {
+              setGate({ mode: result.mode, sessions: result.sessions });
+            }
           })
           .catch((error) => {
             setGate(previous);
@@ -779,16 +814,20 @@ window.__ModuleLoader__.load({
             style: { ...MENU_TEXT, color: 'var(--dsw-alias-state-error-primary, inherit)' },
           }, pickerError));
         }
-        control = h('div', { style: PICKER }, modelTrigger, h('div', { style: cardStyle() }, rows));
+        // Clicks inside the card stay inside it: the outside-click closer would
+        // otherwise fold it away before a failed save could say why.
+        control = h('div', { style: PICKER }, modelTrigger,
+          h('div', { style: cardStyle(), onClick: (event) => event.stopPropagation() }, rows));
       }
 
       /** 「全部 / 本会话 / 手动」: the switch itself, kept as small as the other actions. */
       let gateControl = null;
       if (gate !== null) {
+        const current = effectiveMode(gate, sessionId);
         const items = MODE_MENU.map((item) => menuRow(
           item.value,
           item.label,
-          item.value === gate.mode,
+          item.value === current,
           item.value === modeHover,
           () => chooseMode(item.value),
           () => setModeHover(item.value),
@@ -806,8 +845,8 @@ window.__ModuleLoader__.load({
               setModeOpen((open) => !open);
             },
           },
-            h('span', { style: TRIGGER_TEXT }, MODE_LABEL[gate.mode] ?? '模式')),
-          modeOpen ? h('div', { style: cardStyle() }, items) : null);
+            h('span', { style: TRIGGER_TEXT }, MODE_LABEL[current] ?? '模式')),
+          modeOpen ? h('div', { style: cardStyle(), onClick: (event) => event.stopPropagation() }, items) : null);
       }
 
       return h('section', { style: started ? CARD : BARE },

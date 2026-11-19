@@ -17,7 +17,7 @@
 - 回答要有正文，且不比 `minChars` 短（默认 400 字）。
 - 纯工具轮次、没有正文的轮次不出现。
 - 超过 `maxChars`（默认 40000 字）会跳过，只提示一句，不发模型请求。
-- 还要看此刻的模式：`全部` 每条都做，`本会话` 只做打开过自动的会话，`手动` 一条都不做，等你去点。
+- 还要看此刻的模式：`全部` 每条都做，`本会话` 只做打开过自动的会话，`手动` 一条都不做，等你去点。模式按「当前会话」显示：本会话模式下，不在白名单里的会话显示为 `手动`；在白名单里的会话点 `手动`，只把它自己移出白名单。
 - 自动模式只管打开之后（以及这次启动 DSH 之后）新写出来的回答。翻开旧会话时，以前的回答一律是收起的一行「› 速览」，点了才生成，不会补跑整段历史。同一时间最多 2 个改写在跑。
 - 链接只认网页（`http` / `https`）、`file:`、`mailto:` 和本地路径；`javascript:`、`data:` 这类地址只留文字、不做成链接。
 - 默认是 `手动`：装上之后每条回答下面只有一行「› 速览」，点一下才生成，不会自己花钱。用顺手了在那一行右边切成 `全部`。
@@ -46,7 +46,7 @@
 
 每条速览右上角有「模型」。点开是一张二级卡片，悬浮在按钮下方，列出当前所有能用的 provider / model，当前那个加粗；点一下就是选中，卡片自己收起，这一条立刻用新模型重做，以后都按新的来。不占原位，所以头一行的宽度不会变。
 
-选择存在 profile 目录下的 `dsh-interpreter.json`（例如 `~/.dsh/profiles/desktop/dsh-interpreter.json`）。删掉这个文件就回到内置默认。
+选择存在当前 profile 目录下的 `dsh-interpreter.json`（取 DSH 提供的 `profileContext.dir`，例如 `~/.dsh/profiles/desktop/dsh-interpreter.json`；目录不存在会自动创建）。删掉这个文件就回到内置默认。
 
 ### 其他参数：改 YAML
 
@@ -73,7 +73,8 @@
 - Host 半边注册三个路由：
   - `POST /interpreter/rewrite`：从 Session 日志里取出这一轮落盘的 assistant 正文，调用 `ctx.llm.stream` 改写，结果按「会话 + 序号」缓存。每次调用的 `usage` 块会被收下来，压成 `{inputTokens, outputTokens, totalTokens}` 一并返回；压了两遍就把两次相加，因为那是两次真实计费。
   - `GET /interpreter/models`：列出 `ctx.llm.listProviders()` × `listModels()` 的可选组合，外加当前值。
-  - `POST /interpreter/config`：校验 provider/model 确实在清单里，写进 `dsh-interpreter.json`，清掉改写缓存。打开自动模式（或往白名单里加会话）时记下 `autoSince`；改写路由收到 `auto: true` 的请求时，落盘时间早于 `autoSince` 和本次启动时间的回答回 `skip: history`，不调模型、不进缓存。
+  - `POST /interpreter/config`：校验 provider/model 确实在清单里，写进 `dsh-interpreter.json`，清掉改写缓存（正在跑的旧模型改写落地时也不会再写回缓存）。白名单用 `addSessions` / `removeSessions` 增删，不再整份覆盖，多个块同时改也不会互相冲掉；回包带上完整的 `mode` 和 `sessions`。打开自动模式（或往白名单里加会话）时记下 `autoSince`；改写路由收到 `auto: true` 的请求时，落盘时间早于 `autoSince` 和本次启动时间的回答回 `skip: history`，不调模型、不进缓存。
+  - 同一轮的多个请求共用一次改写；只有等它的请求全部离开才会中断，一个页面关掉不会连累另一个。第二遍压缩失败时保留第一版，不整条报错；模型流以 `stop` 以外的方式结束一律算失败，截断的半截不会当结果缓存。
   - 取正文只在这一轮里找（按事件的 `data.turn` 和 `turn/start` 划界），没有正文的轮次不会借上一轮的回答。
 - Client 半边往 `conversation.chat.turnTail` 塞一个块，挂载时请求改写路由，带「整理中（亮光 + 逐次变长的省略号） / 速览折叠三角 / 花费 / 重新整理 / 重试 / 模型二级卡片」；正文的排版和链接图标在这一半就地渲染，只用 DSH 的样式和主题变量，不引外部样式表。
 - 两个 POST 只回答 `application/json`，浏览器跨站请求过不了预检。

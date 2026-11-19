@@ -8,9 +8,9 @@
  * model's context and the original answer are never touched.
  */
 
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 /** Local route the Client module posts to. */
 const ROUTE_PATH = '/interpreter/rewrite'
@@ -22,17 +22,28 @@ const CONFIG_PATH = '/interpreter/config'
 /** The three ways a new answer can get a 速览. */
 const MODES = ['global', 'session', 'manual']
 
-/** Where the page's own model choice is remembered. */
-const CONFIG_FILE = join(
-  process.env.DSH_PROFILE_DIR ?? join(homedir(), '.dsh', 'profiles', process.env.DSH_PROFILE ?? 'desktop'),
-  'dsh-interpreter.json',
-)
+/** The file the page's own choices are remembered in. */
+const CONFIG_NAME = 'dsh-interpreter.json'
+
+/**
+ * The profile this Host was launched with. The Host says so itself; the
+ * environment and the desktop default only stand in when it does not.
+ * @param ctx - Host plugin lifetime.
+ */
+function profileDirectory(ctx) {
+  const dir = ctx.profileContext?.dir
+  if (typeof dir === 'string' && dir !== '') return dir
+  return process.env.DSH_PROFILE_DIR ?? join(homedir(), '.dsh', 'profiles', process.env.DSH_PROFILE ?? 'desktop')
+}
 
 /** Largest request body accepted from the page, in bytes. */
 const MAX_BODY_BYTES = 4096
 
 /** Cached rewrites kept in memory; the oldest entry is dropped past this. */
 const MAX_CACHE_ENTRIES = 500
+
+/** Sessions remembered in the 本会话 allow-list. */
+const MAX_SESSIONS = 200
 
 /** Rewrites allowed to talk to a model at once; the rest wait their turn. */
 const MAX_CONCURRENT_REWRITES = 2
@@ -82,7 +93,7 @@ const DEFAULTS = {
 }
 
 /** Services required before the route can be installed. */
-export const inject = ['webServer', 'llm', 'sessions']
+export const inject = ['webServer', 'llm', 'sessions', 'profileContext']
 
 /**
  * Last text block set of the assistant answer committed in the Turn that closes
@@ -170,18 +181,24 @@ export function apply(ctx, config) {
     if (value !== undefined) patch[key] = value
   }
 
+  /** Where the page's choices live: the launched profile, not a guessed one. */
+  const configFile = join(profileDirectory(ctx), CONFIG_NAME)
+
   /** The page's choice, loaded once and rewritten on every save. */
   let saved = {}
   const ready = (async () => {
     try {
       // Editors on Windows like to prepend a BOM, which JSON.parse rejects.
-      const raw = await readFile(CONFIG_FILE, 'utf8')
+      const raw = await readFile(configFile, 'utf8')
       const parsed = JSON.parse(raw.replace(/^\uFEFF/, ''))
       if (parsed !== null && typeof parsed === 'object') saved = parsed
     } catch {
       // Nothing saved yet, or unreadable: the defaults stand.
     }
   })()
+
+  /** The last save on its way to disk; the next one waits for it. */
+  let writing = Promise.resolve()
 
   /** Defaults, then the patch, then the page's own choice. */
   const settings = async () => {
@@ -204,6 +221,8 @@ export function apply(ctx, config) {
 
   /** Rewrite results, including the decisions not to rewrite. */
   const cache = new Map()
+  /** Bumped whenever the cache is emptied, so work started before cannot refill it. */
+  let cacheGeneration = 0
   /** Rewrites already running, so a second request joins instead of paying twice. */
   const running = new Map()
 
@@ -282,6 +301,7 @@ export function apply(ctx, config) {
     let out = ''
     let usage
     let failure
+    let finished = false
     for await (const chunk of stream) {
       if (chunk.type === 'text-delta') {
         out += chunk.text
@@ -292,11 +312,17 @@ export function apply(ctx, config) {
         continue
       }
       if (chunk.type !== 'finish') continue
+      finished = true
       const reason = chunk.reason
-      if (reason.kind === 'error' || reason.kind === 'aborted') failure = reason.failure
-      else if (reason.kind !== 'stop') failure = { code: reason.kind, message: `ended with ${reason.kind}` }
+      // Anything but a clean stop is a failure, whether or not it says why:
+      // a cut-off draft must never be shown, or cached, as the rewrite.
+      if (reason?.kind !== 'stop') {
+        const kind = reason?.kind ?? 'unknown'
+        failure = reason?.failure ?? { code: kind, message: `ended with ${kind}` }
+      }
       break
     }
+    if (failure === undefined && !finished && signal.aborted) failure = { code: 'aborted', message: 'aborted' }
     if (failure !== undefined) throw new Error(`${failure.code}: ${failure.message}`)
     const result = out.trim()
     if (result === '') throw new Error('the rewrite model returned no text')
@@ -317,10 +343,17 @@ export function apply(ctx, config) {
     const first = await ask(`${text}\n\n---\n原文 ${text.length} 字，速览请控制在 ${budget} 字以内。`, sessionId, options, signal)
     if (first.text.length <= budget * 1.5) return first
     /** The model ignored the budget: say it once more with the draft in hand. */
-    const second = await ask(
-      `下面这段已经压过一遍，但还有 ${first.text.length} 字，超过 ${budget} 字的上限。再压一遍：只留结论、必要步骤和风险，关键数字和命令不能丢。\n\n${first.text}`,
-      sessionId, options, signal,
-    )
+    let second
+    try {
+      second = await ask(
+        `下面这段已经压过一遍，但还有 ${first.text.length} 字，超过 ${budget} 字的上限。再压一遍：只留结论、必要步骤和风险，关键数字和命令不能丢。\n\n${first.text}`,
+        sessionId, options, signal,
+      )
+    } catch {
+      // The first draft is already paid for and usable: a failed tightening
+      // pass must not throw it away.
+      return first
+    }
     const best = second.text.length < first.text.length ? second : first
     return { text: best.text, usage: mergeUsage(first.usage, second.usage) }
   }
@@ -330,7 +363,8 @@ export function apply(ctx, config) {
     const key = `${sessionId}:${seq}`
     if (force !== true && cache.has(key)) return cache.get(key)
     const joined = running.get(key)
-    if (joined !== undefined) return joined
+    // Work everyone has already walked away from is being torn down; start afresh.
+    if (joined !== undefined && !joined.controller.signal.aborted) return attend(joined, signal)
     if (auto === true) {
       // Decided per request and never cached: the same Turn may still be asked
       // for by hand, and that request must go through.
@@ -340,7 +374,10 @@ export function apply(ctx, config) {
         return { status: 'skip', reason: 'history' }
       }
     }
-    const pending = (async () => {
+    const generation = cacheGeneration
+    const controller = new AbortController()
+    const work = (async () => {
+      const shared = controller.signal
       try {
         const session = ctx.sessions.get(sessionId)
         if (session === undefined) return { status: 'error', message: 'that Session is not loaded' }
@@ -352,19 +389,46 @@ export function apply(ctx, config) {
         if (text.length > options.maxChars) return { status: 'skip', reason: 'too-long' }
         // The reader meets this once, then picks a model from the block itself.
         if (options.provider === '' || options.model === '') return { status: 'error', message: 'no configured model' }
-        const outcome = await limited(signal, () => rewrite(text, sessionId, options, signal))
+        const outcome = await limited(shared, () => rewrite(text, sessionId, options, shared))
         return { status: 'ok', text: outcome.text, usage: outcome.usage }
       } catch (error) {
         return { status: 'error', message: error instanceof Error ? error.message : String(error) }
       }
     })()
-    running.set(key, pending)
+    const entry = { work, controller, users: 0 }
+    running.set(key, entry)
+    work.then((result) => {
+      if (running.get(key) === entry) running.delete(key)
+      // A model switch while this ran makes its answer stale before it lands.
+      if (result.status !== 'error' && generation === cacheGeneration) remember(key, result)
+    })
+    return attend(entry, signal)
+  }
+
+  /**
+   * Wait on shared work for one request. The work is aborted only once every
+   * request waiting on it has gone, so a reader who leaves never cancels the
+   * rewrite another reader is still waiting for.
+   */
+  async function attend(entry, signal) {
+    if (signal.aborted) return { status: 'error', message: 'aborted' }
+    entry.users += 1
+    let left = false
+    const leave = () => {
+      if (left) return
+      left = true
+      entry.users -= 1
+      if (entry.users === 0) entry.controller.abort()
+    }
+    signal.addEventListener('abort', leave, { once: true })
     try {
-      const result = await pending
-      if (result.status !== 'error') remember(key, result)
-      return result
+      return await entry.work
     } finally {
-      running.delete(key)
+      signal.removeEventListener('abort', leave)
+      if (!left) {
+        left = true
+        entry.users -= 1
+      }
     }
   }
 
@@ -463,39 +527,68 @@ export function apply(ctx, config) {
         }
         next.mode = body.mode
       }
-      if (body?.sessions !== undefined) {
-        const list = body.sessions
+      /** Each block holds its own copy of the list, so it sends changes, never the whole list. */
+      const sessionLists = {}
+      for (const field of ['sessions', 'addSessions', 'removeSessions']) {
+        const list = body?.[field]
+        if (list === undefined) continue
         if (!Array.isArray(list) || list.some((id) => typeof id !== 'string')) {
-          reply(res, 400, { status: 'error', message: 'sessions must be a list of Session ids' })
+          reply(res, 400, { status: 'error', message: `${field} must be a list of Session ids` })
           return
         }
-        next.sessions = [...new Set(list)].slice(0, 200)
+        sessionLists[field] = list
       }
-      if (Object.keys(next).length === 0) {
+      if (Object.keys(next).length === 0 && Object.keys(sessionLists).length === 0) {
         reply(res, 400, { status: 'error', message: 'nothing to save' })
         return
       }
       await ready
+      // From here to the assignment nothing awaits, so concurrent saves merge
+      // into the latest list instead of overwriting one another.
+      const before = { ...DEFAULTS, ...patch, ...saved }
+      const wasMode = MODES.includes(before.mode) ? before.mode : DEFAULTS.mode
+      const had = Array.isArray(before.sessions) ? before.sessions.filter((id) => typeof id === 'string') : []
+      if (Object.keys(sessionLists).length > 0) {
+        let list = sessionLists.sessions ?? had
+        if (sessionLists.addSessions !== undefined) list = [...list, ...sessionLists.addSessions]
+        if (sessionLists.removeSessions !== undefined) list = list.filter((id) => !sessionLists.removeSessions.includes(id))
+        // The newest entries are kept when the list overflows.
+        next.sessions = [...new Set(list)].slice(-MAX_SESSIONS)
+      }
       // Turning automation on, or widening it to another Session, starts its
       // clock now: only answers committed from here on are rewritten unasked.
       if (next.mode !== undefined || next.sessions !== undefined) {
-        const before = await settings()
-        const wasMode = MODES.includes(before.mode) ? before.mode : DEFAULTS.mode
         const nowMode = next.mode ?? wasMode
-        const had = Array.isArray(before.sessions) ? before.sessions : []
         const widened = (next.sessions ?? []).some((id) => !had.includes(id))
         if (nowMode !== 'manual' && (nowMode !== wasMode || widened)) next.autoSince = Date.now()
       }
       saved = { ...saved, ...next }
+      const snapshot = `${JSON.stringify(saved, null, 2)}\n`
+      // Saves land on disk one at a time, in the order they were decided.
+      const write = writing.then(async () => {
+        await mkdir(dirname(configFile), { recursive: true })
+        await writeFile(configFile, snapshot, 'utf8')
+      })
+      writing = write.catch(() => {})
       try {
-        await writeFile(CONFIG_FILE, `${JSON.stringify(saved, null, 2)}\n`, 'utf8')
+        await write
       } catch (error) {
         reply(res, 500, { status: 'error', message: error instanceof Error ? error.message : String(error) })
         return
       }
       // A different model makes every remembered rewrite stale; a mode does not.
-      if (next.provider !== undefined) cache.clear()
-      reply(res, 200, { status: 'ok', ...next })
+      if (next.provider !== undefined) {
+        cache.clear()
+        cacheGeneration += 1
+      }
+      const after = { ...DEFAULTS, ...patch, ...saved }
+      reply(res, 200, {
+        status: 'ok',
+        ...next,
+        // The whole gate, so the block that saved can drop its stale copy.
+        mode: MODES.includes(after.mode) ? after.mode : DEFAULTS.mode,
+        sessions: Array.isArray(after.sessions) ? after.sessions : [],
+      })
     },
   }), 'interpreter: config route')
 
