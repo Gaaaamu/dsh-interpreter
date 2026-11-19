@@ -211,7 +211,14 @@ window.__ModuleLoader__.load({
       color: 'var(--dsw-alias-label-primary, inherit)',
     };
     const ITEM_ON = { fontWeight: 600, color: 'var(--dsw-alias-label-primary, inherit)' };
-    const INLINE = /(\*\*[^*\n]+\*\*|`[^`\n]+`|\[[^\]\n]+\]\([^)\s]+\)|\*[^*\n]+\*)/g;
+    /**
+     * A URL standing in the prose on its own. A rewrite often keeps the address but
+     * drops the brackets around it, and a bare address still has to lead somewhere.
+     */
+    const URL_TOKEN = 'https?:\\/\\/[^\\s<>()（）\\[\\]【】《》，。；：！？、*"\'`]+';
+    const INLINE = new RegExp('(\\*\\*[^*\\n]+\\*\\*|`[^`\\n]+`|\\[[^\\]\\n]+\\]\\([^)\\s]+\\)|\\*[^*\\n]+\\*|' + URL_TOKEN + ')', 'g');
+    /** A sentence's full stop is not part of its address. */
+    const TRAILING = /[.,;:!?'"]+$/;
     const FENCE = /^```\s*[\w+-]*\s*$/;
     const HEADING = /^(#{1,6})\s+(.*)$/;
     const BULLET = /^\s*[-*+]\s+/;
@@ -238,6 +245,7 @@ window.__ModuleLoader__.load({
         if (match.index > last) out.push(text.slice(last, match.index));
         const token = match[0];
         const key = `${prefix}-${match.index}`;
+        let used = token.length;
         if (token.startsWith('**')) out.push(h('strong', { key }, token.slice(2, -2)));
         else if (token.startsWith('`')) out.push(h('code', { key }, token.slice(1, -1)));
         else if (token.startsWith('[')) {
@@ -250,8 +258,13 @@ window.__ModuleLoader__.load({
             href: link[2],
             ...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {}),
           }, linkGlyph(link[2], key), link[1]));
+        } else if (/^https?:/i.test(token)) {
+          const href = token.replace(TRAILING, '');
+          used = href.length;
+          out.push(h('a', { key, href, target: '_blank', rel: 'noopener noreferrer' },
+            linkGlyph(href, key), href));
         } else out.push(h('em', { key }, token.slice(1, -1)));
-        last = match.index + token.length;
+        last = match.index + used;
       }
       if (last < text.length) out.push(text.slice(last));
       return out;
