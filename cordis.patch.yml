@@ -1,0 +1,5 @@
+- insert:
+    - id: interpreter
+      name: dsh-interpreter
+      config:
+        minChars: 400

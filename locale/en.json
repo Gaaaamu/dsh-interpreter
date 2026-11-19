@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Condensed view",
+    "description": "Adds a shorter, conclusion-first version of each finished answer below it: the original stays untouched, and so does the main conversation's context. Manual by default — pick a rewrite model inside the block (none is bundled), then click when you want one.",
+    "detail": "docs/DETAIL.md"
+  }
+}
