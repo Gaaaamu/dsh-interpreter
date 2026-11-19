@@ -20,6 +20,7 @@
 - 表格还是表格，代码还是代码，命令、路径、数字原样照抄 —— 该抄的地方不许改写。
 - 右边可以换一个**专门管说人话的模型**来做这件事，跟主对话用的模型互不干扰。
 - 右下角一行小字：这条改写花了多少 token。
+- 长得像 DSH 自己的一部分：正文排版、行内代码的小框、链接的颜色和下划线都照抄 DSH 的 Markdown 样式，颜色取主题变量，你换主题、换字号它跟着变。
 
 读原文是检查，读速览是理解。两个都在，随便切换。
 
@@ -131,6 +132,7 @@ Models that are good at work are often bad at talking. Their answers are full of
 - Tables stay tables, code stays code. Commands, paths, numbers and error strings are copied verbatim.
 - The rewrite can use a **different model from the one that wrote the answer** — pick it inside the block.
 - A small token counter in the corner tells you what that rewrite cost.
+- It looks like a part of DSH: body typography, inline-code chips and link colour, weight and underline are copied from DSH's own markdown styles and driven by theme tokens, so it follows whatever theme and font size you picked.
 
 Reading the original is checking. Reading the condensed view is understanding. Both stay, one click apart.
 

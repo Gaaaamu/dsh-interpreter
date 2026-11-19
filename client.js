@@ -49,18 +49,103 @@ window.__ModuleLoader__.load({
     };
     const MUTED = { fontSize: 12, color: 'var(--dsw-alias-label-secondary, inherit)' };
     /**
-     * Waiting speaks in DSH's own voice — the blue of 「深度求索中」 with the light
-     * running along the words — instead of a dead 「整理中…」. The two stops are the
-     * colours sampled from that label.
+     * The body of the block is the answer's own typography, not an imitation of it:
+     * every rule below is copied from the app's markdown sheet (`_markdown_*` in the
+     * frontend bundle) and every value is a live theme token, so the block follows
+     * whatever theme, accent and font size the reader picked, and a future release
+     * that renames its hashed classes cannot break it.
+     *
+     * Waiting speaks in the app's voice too: 「整理中」 carries the same light that
+     * runs along 「深度求索中」, drawn from the same two tokens, with an ellipsis that
+     * grows one dot at a time beside it. The light repeats without a seam because the
+     * band travels exactly its own width and is off the glyphs at both ends of the
+     * cycle; reduced-motion readers get the plain text and all three dots.
      */
-    const PULSE = {
-      display: 'inline-block', fontSize: 14, lineHeight: 1.6,
-      backgroundImage: 'linear-gradient(90deg, #3c4790 0%, #8abcfe 45%, #3c4790 90%)',
-      backgroundSize: '250% 100%', backgroundRepeat: 'no-repeat',
-      backgroundClip: 'text', WebkitBackgroundClip: 'text', color: 'transparent',
-      animation: 'ra-pulse 1.8s linear infinite',
-    };
-    const PULSE_CSS = '@keyframes ra-pulse{from{background-position:100% 0}to{background-position:0% 0}}';
+    const CSS = `
+.ra-md{min-width:0;overflow-wrap:anywhere;font:var(--dsw-font-markdown-base,14px/24px var(--dsw-font-family,system-ui));color:var(--dsw-alias-label-primary,inherit)}
+.ra-md p{margin:16px 0}
+.ra-md strong{font-weight:600}
+.ra-md h1{font:var(--dsw-font-markdown-h1,700 21px/30px var(--dsw-font-family,system-ui));margin:32px 0 16px}
+.ra-md h2{font:var(--dsw-font-markdown-h2,700 18px/28px var(--dsw-font-family,system-ui));margin:32px 0 16px}
+.ra-md h3{font:var(--dsw-font-markdown-h3,600 16px/26px var(--dsw-font-family,system-ui));margin:32px 0 16px}
+.ra-md :is(h4,h5,h6){font:var(--dsw-font-markdown-base-strong,600 14px/24px var(--dsw-font-family,system-ui));margin:16px 0}
+.ra-md :is(h1,h2,h3,h4,h5,h6) strong{font-weight:inherit}
+.ra-md :is(ul,ol){margin:16px 0;padding-left:18px}
+.ra-md li:not(:first-child){margin-top:6px}
+.ra-md li>:is(ul,ol){margin-top:4px}
+.ra-md li::marker{line-height:24px;color:var(--dsw-alias-label-secondary,inherit)}
+.ra-md :is(ul,ol) ol{list-style-position:inside;padding-left:0}
+.ra-md blockquote{border-left:2px solid var(--dsw-alias-label-caption,currentColor);margin:16px 0 0;padding-left:14px}
+.ra-md hr{display:block;border:none;height:.5px;margin:32px 0;background:var(--dsw-alias-border-l2,rgba(128,128,128,.3))}
+.ra-md pre{margin:16px 0;padding:10px 12px;overflow:auto;font:var(--dsw-font-markdown-code,13px/20px ui-monospace);font-family:var(--ds-font-family-code,ui-monospace,monospace);background:var(--dsw-alias-bg-layer-2,rgba(128,128,128,.12));border-radius:var(--dsw-radius-md,8px)}
+.ra-md pre code{font:inherit;background:none;border:0;padding:0}
+.ra-md :not(pre)>code{display:inline-flex;align-items:center;box-sizing:border-box;font:var(--dsw-font-markdown-code,13px/20px ui-monospace);font-family:var(--ds-font-family-code,ui-monospace,monospace);font-size:.875em;background-color:var(--dsw-alias-markdown-inline-code,rgba(128,128,128,.18));border:.5px solid var(--dsw-alias-border-l1,rgba(128,128,128,.3));border-radius:var(--dsw-radius-sm,6px);padding:0 5px}
+.ra-table{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}
+.ra-md table{border-collapse:collapse;width:max-content;max-width:max-content}
+.ra-md th{text-align:start;padding:10px 16px;border-bottom:.5px solid var(--dsw-alias-border-l3,rgba(128,128,128,.35));font:var(--dsw-font-markdown-table-head,600 14px/22px var(--dsw-font-family,system-ui));max-width:min(30vw,320px);min-width:100px}
+.ra-md td{padding:10px 16px;border-bottom:.5px solid var(--dsw-alias-border-l2,rgba(128,128,128,.2));font:var(--dsw-font-markdown-table,14px/22px var(--dsw-font-family,system-ui));max-width:min(30vw,320px);min-width:100px}
+.ra-md :is(th,td):first-child{padding-left:0}
+.ra-md td:last-child{padding-right:0}
+.ra-md table code{font-size:11px}
+.ra-md a{position:relative;color:var(--dsw-alias-link,var(--dsw-alias-state-business-primary,#4176e6));font-weight:500;text-decoration:none;transition:box-shadow var(--ds-transition-duration,150ms) var(--ds-ease-in-out,ease);border-left:3px solid transparent;border-right:3px solid transparent;border-top:2px solid transparent;border-bottom:2px solid transparent;margin-left:-3px;margin-right:-3px}
+.ra-md a:focus{outline:none;text-decoration:underline dotted var(--dsw-alias-link,currentColor);text-underline-offset:3px}
+@media(hover:hover){.ra-md a:hover{outline:none;text-decoration:underline dotted var(--dsw-alias-link,currentColor);text-underline-offset:3px}}
+.ra-md a:focus-visible{box-shadow:0 0 0 2px var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary,#7aaaff))}
+.ra-link-icon{flex:none;width:1.1em;height:1.1em;vertical-align:-.25em;margin-right:5px}
+.ra-md>:first-child,.ra-md p:first-child{margin-top:0!important}
+.ra-md>:last-child,.ra-md p:last-child{margin-bottom:0!important}
+.ra-wait{display:inline-flex;align-items:baseline;font:var(--dsw-font-markdown-base,14px/24px var(--dsw-font-family,system-ui));color:var(--dsw-alias-label-deep-diving,var(--dsw-alias-link,#4176e6))}
+.ra-wait-root{position:relative;display:inline-grid;width:max-content;max-width:100%;vertical-align:top;color:inherit}
+.ra-wait-ghost{position:absolute;inset:0;overflow:clip;pointer-events:none;user-select:none}
+.ra-wait-sweep{position:absolute;inset:0;overflow:hidden;color:var(--dsw-alias-label-deep-diving-shimmer,var(--dsw-alias-label-deep-diving,#4176e6));-webkit-mask-image:linear-gradient(105deg,transparent 0%,#000 40% 60%,transparent 100%);mask-image:linear-gradient(105deg,transparent 0%,#000 40% 60%,transparent 100%);transform:translate(-100%);animation-name:ra-wait-sweep;animation-duration:1.5s;animation-delay:.3s;animation-timing-function:steps(48,end);animation-iteration-count:infinite}
+.ra-wait-highlight{display:block;width:100%;height:100%;transform:translate(100%);animation-name:ra-wait-highlight;animation-duration:1.5s;animation-delay:.3s;animation-timing-function:steps(48,end);animation-iteration-count:infinite}
+.ra-dots{display:inline-block;width:1em;text-align:left}
+.ra-dot2{animation:ra-reveal-second 1.5s step-end infinite}
+.ra-dot3{animation:ra-reveal-third 1.5s step-end infinite}
+@keyframes ra-wait-sweep{0%{transform:translate(-100%)}66.6667%,to{transform:translate(100%)}}
+@keyframes ra-wait-highlight{0%{transform:translate(100%)}66.6667%,to{transform:translate(-100%)}}
+@keyframes ra-reveal-second{0%,33.32%{opacity:0}33.33%,to{opacity:1}}
+@keyframes ra-reveal-third{0%,66.65%{opacity:0}66.66%,to{opacity:1}}
+@media(prefers-reduced-motion:reduce){.ra-wait-ghost{display:none}.ra-wait-sweep,.ra-wait-highlight,.ra-dot2,.ra-dot3{animation:none;opacity:1}}
+`;
+    /**
+     * The three glyphs a link can wear, taken from the app's own icon data so a link
+     * in the block sits in the same family as a link in the answer above: GitHub's
+     * mark (filled, in the brand set's padded 24-box), a page for a path on disk,
+     * a globe for anything else on the web (both from the 16-box stroke set).
+     */
+    const BRAND_GITHUB = ['M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'];
+    const STROKE_GLOBE = [
+      'M7.99986 14.0887C11.3626 14.0887 14.0886 11.3627 14.0886 7.99998C14.0886 4.63727 11.3626 1.91125 7.99986 1.91125C4.63715 1.91125 1.91113 4.63727 1.91113 7.99998C1.91113 11.3627 4.63715 14.0887 7.99986 14.0887Z',
+      'M2.34619 8H13.6538',
+      'M7.99976 14.0889C9.23509 14.0889 10.1743 11.3629 10.1743 8.00006C10.1743 4.63739 9.23509 1.91138 7.99976 1.91138',
+      'M7.99973 14.0889C6.76445 14.0889 5.8252 11.3629 5.8252 8.00006C5.8252 4.63739 6.76445 1.91138 7.99973 1.91138',
+    ];
+    const STROKE_PAGE = [
+      'M3.75275 14.271H12.2473C12.7749 14.271 13.2027 13.8433 13.2027 13.3156V5.91732C13.2027 5.65958 13.0985 5.41276 12.9139 5.23293L9.59477 2.00011C9.4164 1.82636 9.17717 1.72913 8.9282 1.72913H3.75275C3.22511 1.72913 2.79736 2.15686 2.79736 2.68451V13.3156C2.79736 13.8433 3.22511 14.271 3.75275 14.271Z',
+      'M8.84888 1.83838V4.94133C8.84888 5.46896 9.2766 5.89671 9.80426 5.89671H13.157',
+    ];
+
+    /**
+     * The glyph that heads a link. A repository gets the mark, a path on disk gets
+     * the page, a URL gets the globe.
+     * @param href - the link target.
+     * @param prefix - node key prefix.
+     */
+    function linkGlyph(href, prefix) {
+      const brand = /^https?:\/\/(?:[\w-]+\.)?github\.com\//i.test(href);
+      const web = /^https?:/i.test(href);
+      const paths = brand ? BRAND_GITHUB : web ? STROKE_GLOBE : STROKE_PAGE;
+      return h('svg', {
+        key: `${prefix}-glyph`,
+        className: 'ra-link-icon',
+        viewBox: brand ? '-2 -2 28 28' : '0 0 16 16',
+        fill: brand ? 'currentColor' : 'none',
+        stroke: brand ? undefined : 'currentColor',
+        strokeWidth: brand ? undefined : 1.2,
+        'aria-hidden': 'true',
+      }, paths.map((d, i) => h('path', { key: i, d })));
+    }
     /** Quiet until the pointer arrives: an icon carries no more meaning in full ink. */
     const ICON_BUTTON = {
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -126,40 +211,6 @@ window.__ModuleLoader__.load({
       color: 'var(--dsw-alias-label-primary, inherit)',
     };
     const ITEM_ON = { fontWeight: 600, color: 'var(--dsw-alias-label-primary, inherit)' };
-    /** The opening sentence is the point of the whole block, so it gets a step up. */
-    const LEAD = { margin: '0 0 12px', fontSize: 15, lineHeight: 1.7 };
-    const PARAGRAPH = { margin: '0 0 12px' };
-    const LIST = { margin: '0 0 12px', paddingLeft: 20 };
-    const BULLET_ITEM = { marginBottom: 6 };
-    const H = { fontSize: 15, fontWeight: 600, margin: '16px 0 8px' };
-    const PRE = {
-      margin: '0 0 12px', padding: '10px 12px',
-      background: 'var(--dsw-alias-bg-layer-2, rgba(128,128,128,0.13))',
-      borderRadius: 6, overflowX: 'auto', fontSize: 13, lineHeight: 1.6,
-    };
-    const CODE = {
-      padding: '1px 5px', borderRadius: 4,
-      background: 'var(--dsw-alias-bg-layer-2, rgba(128,128,128,0.15))', fontSize: '0.9em',
-    };
-    const QUOTE = {
-      margin: '0 0 12px', paddingLeft: 12,
-      borderLeft: '2px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))',
-      color: 'var(--dsw-alias-label-secondary, inherit)',
-    };
-    const TABLE_WRAP = { margin: '0 0 14px', overflowX: 'auto' };
-    const TABLE_BOX = { borderCollapse: 'collapse', fontSize: 13.5, lineHeight: 1.6 };
-    /** Small, quiet header; hairline rows keep a wide table scannable. */
-    const TH = {
-      textAlign: 'left', fontSize: 12, fontWeight: 600, letterSpacing: '0.03em',
-      color: 'var(--dsw-alias-label-secondary, inherit)',
-      padding: '0 24px 7px 0',
-      borderBottom: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.3))',
-    };
-    const TD = {
-      padding: '9px 24px 9px 0', verticalAlign: 'top',
-      borderBottom: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.18))',
-    };
-
     const INLINE = /(\*\*[^*\n]+\*\*|`[^`\n]+`|\[[^\]\n]+\]\([^)\s]+\)|\*[^*\n]+\*)/g;
     const FENCE = /^```\s*[\w+-]*\s*$/;
     const HEADING = /^(#{1,6})\s+(.*)$/;
@@ -188,10 +239,17 @@ window.__ModuleLoader__.load({
         const token = match[0];
         const key = `${prefix}-${match.index}`;
         if (token.startsWith('**')) out.push(h('strong', { key }, token.slice(2, -2)));
-        else if (token.startsWith('`')) out.push(h('code', { key, style: CODE }, token.slice(1, -1)));
+        else if (token.startsWith('`')) out.push(h('code', { key }, token.slice(1, -1)));
         else if (token.startsWith('[')) {
           const link = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(token);
-          out.push(h('a', { key, href: link[2], target: '_blank', rel: 'noreferrer' }, link[1]));
+          const external = /^https?:/i.test(link[2]);
+          // Only a web target opens a new tab; a path stays where it is, exactly as
+          // the answer above treats the two.
+          out.push(h('a', {
+            key,
+            href: link[2],
+            ...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {}),
+          }, linkGlyph(link[2], key), link[1]));
         } else out.push(h('em', { key }, token.slice(1, -1)));
         last = match.index + token.length;
       }
@@ -276,27 +334,33 @@ window.__ModuleLoader__.load({
       return out;
     }
 
-    /** Render one parsed block. */
+    /**
+     * Render one parsed block with the elements the app's own markdown uses; all of
+     * the measuring is in CSS, so nothing here carries a typographic opinion.
+     */
     function renderBlock(block, at) {
       const key = `b${at}`;
-      if (block.kind === 'heading') return h('div', { key, style: H }, inline(block.text, key));
-      if (block.kind === 'code') return h('pre', { key, style: PRE }, h('code', null, block.text));
-      if (block.kind === 'list') {
-        const children = block.items.map((item, i) => h('li', { key: `i${i}`, style: BULLET_ITEM }, inline(item, `${key}-${i}`)));
-        return h(block.ordered ? 'ol' : 'ul', { key, style: LIST }, children);
+      if (block.kind === 'heading') {
+        const level = Math.min(6, Math.max(1, block.level));
+        return h(`h${level}`, { key }, inline(block.text, key));
       }
-      if (block.kind === 'quote') return h('blockquote', { key, style: QUOTE }, inline(block.text, key));
+      if (block.kind === 'code') return h('pre', { key }, h('code', null, block.text));
+      if (block.kind === 'list') {
+        const children = block.items.map((item, i) => h('li', { key: `i${i}` }, inline(item, `${key}-${i}`)));
+        return h(block.ordered ? 'ol' : 'ul', { key }, children);
+      }
+      if (block.kind === 'quote') return h('blockquote', { key }, inline(block.text, key));
       if (block.kind === 'table') {
         const rows = block.rows.map((cells, r) => h('tr', { key: `r${r}` },
-          cells.map((cell, c) => h('td', { key: `c${c}`, style: TD }, inline(cell, `${key}-${r}-${c}`)))));
+          cells.map((cell, c) => h('td', { key: `c${c}` }, inline(cell, `${key}-${r}-${c}`)))));
         if (block.head !== null) {
           rows.unshift(h('tr', { key: 'h' },
-            block.head.map((cell, c) => h('th', { key: `c${c}`, style: TH }, inline(cell, `${key}-h-${c}`)))));
+            block.head.map((cell, c) => h('th', { key: `c${c}` }, inline(cell, `${key}-h-${c}`)))));
         }
-        return h('div', { key, style: TABLE_WRAP }, h('table', { style: TABLE_BOX }, h('tbody', null, rows)));
+        return h('div', { key, className: 'ra-table' }, h('table', null, h('tbody', null, rows)));
       }
-      if (block.kind === 'rule') return h('hr', { key, style: { border: 0, borderTop: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.25))', margin: '14px 0' } });
-      return h('p', { key, style: at === 0 ? LEAD : PARAGRAPH }, inline(block.text, key));
+      if (block.kind === 'rule') return h('hr', { key });
+      return h('p', { key }, inline(block.text, key));
     }
 
     /** Ask the Host for the readable rewrite of one finished Turn. */
@@ -600,8 +664,22 @@ window.__ModuleLoader__.load({
       const ready = phase.kind === 'ready';
       const shown = started && open;
       const body = [];
-      if (phase.kind === 'loading') body.push(h('div', { key: 'wait', style: PULSE }, '整理中…'));
-      else if (phase.kind === 'toolong') body.push(h('div', { key: 'long', style: MUTED }, '原文太长，这次没有整理'));
+      if (phase.kind === 'loading') {
+        // Same reading as 「深度求索中」 above: the light runs across the words, and the
+        // ellipsis grows a dot at a time. The ghost copy is what the light touches —
+        // the real text stays put, so nothing shifts when it passes.
+        body.push(h('div', { key: 'wait' },
+          h('span', { className: 'ra-wait' },
+            h('span', { className: 'ra-wait-root' },
+              h('span', null, '整理中'),
+              h('span', { className: 'ra-wait-ghost', 'aria-hidden': 'true' },
+                h('span', { className: 'ra-wait-sweep' },
+                  h('span', { className: 'ra-wait-highlight' }, '整理中')))),
+            h('span', { className: 'ra-dots', 'aria-hidden': 'true' },
+              h('span', null, '\u00b7'),
+              h('span', { className: 'ra-dot2' }, '\u00b7'),
+              h('span', { className: 'ra-dot3' }, '\u00b7')))));
+      } else if (phase.kind === 'toolong') body.push(h('div', { key: 'long', style: MUTED }, '原文太长，这次没有整理'));
       else if (quiet) body.push(h('div', { key: 'short', style: MUTED }, '这条没什么可压的'));
       else if (phase.kind === 'failed') {
         body.push(h('div', { key: 'fail', style: MUTED }, `整理失败：${phase.message}`));
@@ -686,8 +764,8 @@ window.__ModuleLoader__.load({
       }
 
       return h('section', { style: started ? CARD : BARE },
-        // The keyframes only exist while something is being written.
-        phase.kind === 'loading' ? h('style', { key: 'ra-pulse' }, PULSE_CSS) : null,
+        // The sheet travels with the body it styles, so nothing leaks into the app.
+        shown ? h('style', { key: 'ra-css' }, CSS) : null,
         h('div', { style: HEAD },
           h('button', {
             style: DISCLOSURE,
@@ -710,7 +788,7 @@ window.__ModuleLoader__.load({
           // belong to the thing they switch, and come back with it.
           shown ? gateControl : null,
           shown ? control : null),
-        shown ? h('div', { style: BODY }, body) : null,
+        shown ? h('div', { style: BODY, className: 'ra-md' }, body) : null,
         shown && ready
           ? h('div', { style: FOOT },
               cost,
