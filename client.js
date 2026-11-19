@@ -676,9 +676,9 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'ra-wait-sweep' },
                   h('span', { className: 'ra-wait-highlight' }, '整理中')))),
             h('span', { className: 'ra-dots', 'aria-hidden': 'true' },
-              h('span', null, '\u00b7'),
-              h('span', { className: 'ra-dot2' }, '\u00b7'),
-              h('span', { className: 'ra-dot3' }, '\u00b7')))));
+              h('span', null, '.'),
+              h('span', { className: 'ra-dot2' }, '.'),
+              h('span', { className: 'ra-dot3' }, '.')))));
       } else if (phase.kind === 'toolong') body.push(h('div', { key: 'long', style: MUTED }, '原文太长，这次没有整理'));
       else if (quiet) body.push(h('div', { key: 'short', style: MUTED }, '这条没什么可压的'));
       else if (phase.kind === 'failed') {
