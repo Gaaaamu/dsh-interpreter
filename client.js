@@ -72,7 +72,7 @@ window.__ModuleLoader__.load({
 .ra-md :is(h1,h2,h3,h4,h5,h6) strong{font-weight:inherit}
 .ra-md :is(ul,ol){margin:16px 0;padding-left:18px}
 .ra-md li:not(:first-child){margin-top:6px}
-.ra-md li>:is(ul,ol){margin-top:4px}
+.ra-md li>:is(ul,ol){margin:4px 0 0}
 .ra-md li::marker{line-height:24px;color:var(--dsw-alias-label-secondary,inherit)}
 .ra-md :is(ul,ol) ol{list-style-position:inside;padding-left:0}
 .ra-md blockquote{border-left:2px solid var(--dsw-alias-label-caption,currentColor);margin:16px 0 0;padding-left:14px}
@@ -216,13 +216,14 @@ window.__ModuleLoader__.load({
      * drops the brackets around it, and a bare address still has to lead somewhere.
      */
     const URL_TOKEN = 'https?:\\/\\/[^\\s<>()（）\\[\\]【】《》，。；：！？、*"\'`]+';
-    const INLINE = new RegExp('(\\*\\*[^*\\n]+\\*\\*|`[^`\\n]+`|\\[[^\\]\\n]+\\]\\([^)\\s]+\\)|\\*[^*\\n]+\\*|' + URL_TOKEN + ')', 'g');
+    /** Emphasis hugs its words: `*x*` is italic, the `*` of `a * b * c` is arithmetic. */
+    const INLINE = new RegExp('(\\*\\*[^*\\n]+\\*\\*|`[^`\\n]+`|\\[[^\\]\\n]+\\]\\([^)\\s]+\\)|\\*[^\\s*](?:[^*\\n]*[^\\s*])?\\*|' + URL_TOKEN + ')', 'g');
     /** A sentence's full stop is not part of its address. */
     const TRAILING = /[.,;:!?'"]+$/;
     const FENCE = /^```\s*[\w+-]*\s*$/;
     const HEADING = /^(#{1,6})\s+(.*)$/;
-    const BULLET = /^\s*[-*+]\s+/;
-    const ORDERED = /^\s*\d+[.)]\s+/;
+    /** One list item: its indent, its marker, its text. */
+    const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
     const QUOTED = /^>\s?/;
     const RULE = /^\s*(-{3,}|\*{3,})\s*$/;
     /** Lines that start a block of their own instead of continuing a paragraph. */
@@ -291,6 +292,81 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Split one table row into cells. `\|` is a pipe inside a cell, and so is a
+     * pipe inside backticks: a command such as `a | b` stays in one cell.
+     * @param row - the raw table line.
+     */
+    function tableCells(row) {
+      const body = row.replace(/^\s*\|/, '').replace(/\|\s*$/, '');
+      const cells = [];
+      let cell = '';
+      let inCode = false;
+      for (let at = 0; at < body.length; at += 1) {
+        const char = body[at];
+        if (char === '\\' && body[at + 1] === '|') { cell += '|'; at += 1; continue; }
+        if (char === '`') inCode = !inCode;
+        if (char === '|' && !inCode) { cells.push(cell.trim()); cell = ''; continue; }
+        cell += char;
+      }
+      cells.push(cell.trim());
+      return cells;
+    }
+
+    /** Columns a line is indented by; a tab counts as four. */
+    function indentOf(text) {
+      return text.replace(/\t/g, '    ').length;
+    }
+
+    /**
+     * Read one list, nested lists and wrapped lines included, starting at `start`.
+     * A deeper-indented item opens a list inside the item above it; a line that
+     * is not a new block continues the item above it; a blank line ends the list
+     * unless the next line is another item of it.
+     * @param lines - every line of the source.
+     * @param start - the index of the list's first item.
+     * @returns the list block and the index of the first line after it.
+     */
+    function readList(lines, start) {
+      const items = [];
+      let index = start;
+      while (index < lines.length) {
+        const line = lines[index];
+        if (line.trim() === '') {
+          let ahead = index + 1;
+          while (ahead < lines.length && lines[ahead].trim() === '') ahead += 1;
+          if (ahead < lines.length && LIST_ITEM.test(lines[ahead]) && !RULE.test(lines[ahead])) { index = ahead; continue; }
+          break;
+        }
+        const item = RULE.test(line) ? null : LIST_ITEM.exec(line);
+        if (item !== null) {
+          const ordered = /\d/.test(item[2]);
+          items.push({ indent: indentOf(item[1]), ordered, number: ordered ? parseInt(item[2], 10) : 1, text: item[3] });
+          index += 1;
+          continue;
+        }
+        if (/^\s*(#{1,6}\s|```|>|\|)/.test(line) || RULE.test(line)) break;
+        items[items.length - 1].text += `\n${line.trim()}`;
+        index += 1;
+      }
+      // Fold the flat run into a tree by indentation.
+      const root = { kind: 'list', ordered: items[0].ordered, start: items[0].number, items: [] };
+      const stack = [{ indent: items[0].indent, list: root }];
+      for (const item of items) {
+        while (stack.length > 1 && item.indent < stack[stack.length - 1].indent) stack.pop();
+        let level = stack[stack.length - 1];
+        const parent = level.list.items[level.list.items.length - 1];
+        if (item.indent > level.indent && parent !== undefined) {
+          const nested = { kind: 'list', ordered: item.ordered, start: item.number, items: [] };
+          parent.children.push(nested);
+          level = { indent: item.indent, list: nested };
+          stack.push(level);
+        }
+        level.list.items.push({ text: item.text, children: [] });
+      }
+      return { block: root, next: index };
+    }
+
+    /**
      * Fold the rewrite Markdown into paragraph, list, heading and code blocks.
      * @param source - the Markdown text.
      */
@@ -316,14 +392,10 @@ window.__ModuleLoader__.load({
           continue;
         }
         if (RULE.test(line)) { out.push({ kind: 'rule' }); index += 1; continue; }
-        if (BULLET.test(line) || ORDERED.test(line)) {
-          const ordered = ORDERED.test(line);
-          const items = [];
-          while (index < lines.length && (ordered ? ORDERED : BULLET).test(lines[index])) {
-            items.push(lines[index].replace(ordered ? ORDERED : BULLET, ''));
-            index += 1;
-          }
-          out.push({ kind: 'list', ordered, items });
+        if (LIST_ITEM.test(line)) {
+          const list = readList(lines, index);
+          out.push(list.block);
+          index = list.next;
           continue;
         }
         if (QUOTED.test(line)) {
@@ -346,12 +418,7 @@ window.__ModuleLoader__.load({
               if (head === null && rows.length === 1) head = rows.pop();
               continue;
             }
-            const cells = row
-              .replace(/^\s*\|/, '')
-              .replace(/\|\s*$/, '')
-              .split('|')
-              .map((cell) => cell.trim());
-            rows.push(cells);
+            rows.push(tableCells(row));
           }
           if (rows.length > 0 || head !== null) out.push({ kind: 'table', head, rows });
           continue;
@@ -367,6 +434,18 @@ window.__ModuleLoader__.load({
       return out;
     }
 
+    /** One list and the lists nested in its items; an ordered list keeps its first number. */
+    function renderList(list, key) {
+      const children = list.items.map((item, i) => {
+        const itemKey = `${key}-${i}`;
+        return h('li', { key: `i${i}` },
+          inline(item.text, itemKey),
+          item.children.map((nested, n) => renderList(nested, `${itemKey}-n${n}`)));
+      });
+      const start = list.ordered && list.start !== 1 ? { start: list.start } : null;
+      return h(list.ordered ? 'ol' : 'ul', { key, ...start }, children);
+    }
+
     /**
      * Render one parsed block with the elements the app's own markdown uses; all of
      * the measuring is in CSS, so nothing here carries a typographic opinion.
@@ -378,10 +457,7 @@ window.__ModuleLoader__.load({
         return h(`h${level}`, { key }, inline(block.text, key));
       }
       if (block.kind === 'code') return h('pre', { key }, h('code', null, block.text));
-      if (block.kind === 'list') {
-        const children = block.items.map((item, i) => h('li', { key: `i${i}` }, inline(item, `${key}-${i}`)));
-        return h(block.ordered ? 'ol' : 'ul', { key }, children);
-      }
+      if (block.kind === 'list') return renderList(block, key);
       if (block.kind === 'quote') return h('blockquote', { key }, inline(block.text, key));
       if (block.kind === 'table') {
         const rows = block.rows.map((cells, r) => h('tr', { key: `r${r}` },
@@ -414,7 +490,9 @@ window.__ModuleLoader__.load({
 
     /** Provider errors are too technical to show as-is. */
     function readableError(message) {
-      return /UNKNOWN_MODEL|no configured model/i.test(message) ? '这个模型现在用不了，点「模型」换一个' : message;
+      if (/no configured model/i.test(message)) return '还没选改写用的模型，点「模型」挑一个';
+      if (/UNKNOWN_MODEL/i.test(message)) return '这个模型现在用不了，点「模型」换一个';
+      return message;
     }
 
     /** Read the selectable models and the one in force. */
@@ -545,6 +623,65 @@ window.__ModuleLoader__.load({
         h('path', { d: 'm6 9 6 6 6-6' }));
     }
 
+    /** The id of the one sheet every block shares. */
+    const STYLE_ID = 'dsh-interpreter-css';
+
+    /**
+     * Put the block's sheet in the page once, however many blocks are open. Every
+     * rule is scoped under `ra-` classes, so nothing in it reaches the app.
+     */
+    function ensureStyle() {
+      if (typeof document === 'undefined' || document.getElementById(STYLE_ID) !== null) return;
+      const sheet = document.createElement('style');
+      sheet.id = STYLE_ID;
+      sheet.textContent = CSS;
+      document.head.appendChild(sheet);
+    }
+
+    /**
+     * The gate (mode and allow-list), read once for the whole page and shared by
+     * every block, so a long Session costs one request instead of one per Turn,
+     * and a change made in one block reaches the others.
+     */
+    const gateStore = { value: null, failed: false, loading: false, listeners: new Set() };
+
+    function setSharedGate(value) {
+      gateStore.value = value;
+      for (const listener of gateStore.listeners) listener(value);
+    }
+
+    function loadGate() {
+      if (gateStore.loading || (gateStore.value !== null && !gateStore.failed)) return;
+      gateStore.loading = true;
+      requestGate()
+        .then((result) => {
+          if (result.status !== 'ok') throw new Error(result.message ?? '读不到设置');
+          gateStore.failed = false;
+          setSharedGate({ mode: result.mode, sessions: Array.isArray(result.sessions) ? result.sessions : [] });
+        })
+        .catch(() => {
+          // Unreadable settings must not start spending: stand in with the
+          // default, a folded line that waits for a click, and let the next
+          // block that mounts try again.
+          gateStore.failed = true;
+          setSharedGate({ mode: 'manual', sessions: [] });
+        })
+        .finally(() => { gateStore.loading = false; });
+    }
+
+    /** The shared gate; null until the first read lands. */
+    function useSharedGate(enabled) {
+      const [gate, setGate] = useState(gateStore.value);
+      useEffect(() => {
+        if (!enabled) return undefined;
+        gateStore.listeners.add(setGate);
+        setGate(gateStore.value);
+        loadGate();
+        return () => { gateStore.listeners.delete(setGate); };
+      }, [enabled]);
+      return gate;
+    }
+
     /** One 「速览」 block for the Turn the slot hands over. */
     function Interpreter(props) {
       const sessionId = props.sessionId;
@@ -552,8 +689,6 @@ window.__ModuleLoader__.load({
       const [open, setOpen] = useState(true);
       const [phase, setPhase] = useState({ kind: 'loading' });
       const [attempt, setAttempt] = useState(0);
-      /** null until the Host says when blocks are wanted. */
-      const [gate, setGate] = useState(null);
       /** Set when the reader asks for this Turn by hand. */
       const [wanted, setWanted] = useState(false);
       /** Set when the Host says this answer predates automation: it waits for a click. */
@@ -572,8 +707,18 @@ window.__ModuleLoader__.load({
       const [pickerError, setPickerError] = useState('');
       const [iconHover, setIconHover] = useState(false);
       const usable = typeof sessionId === 'string' && typeof seq === 'number';
-      const auto = gate !== null && !historic
-        && (gate.mode === 'global' || (gate.mode === 'session' && gate.sessions.includes(sessionId)));
+      /** The page's gate, live: the mode menu shows and edits this one. */
+      const gate = useSharedGate(usable);
+      /**
+       * The gate as this block first found it. A block decides once whether the
+       * mode asked for it; switching modes later fills in only the Turn the
+       * reader switched from, and Turns that arrive afterwards.
+       */
+      const [firstGate, setFirstGate] = useState(gate);
+      useEffect(() => {
+        if (firstGate === null && gate !== null) setFirstGate(gate);
+      }, [firstGate, gate]);
+      const auto = firstGate !== null && !historic && effectiveMode(firstGate, sessionId) !== 'manual';
       /** Nothing is rewritten until either the mode asks for it or the reader does. */
       const started = auto || wanted;
 
@@ -661,7 +806,7 @@ window.__ModuleLoader__.load({
           change = { mode: 'manual' };
           local = { mode: 'manual', sessions: previous.sessions };
         }
-        setGate(local);
+        setSharedGate(local);
         // Switching this Turn to an automatic mode fills in the block the reader is
         // looking at; earlier Turns keep whatever they already had.
         if (!started && pick !== 'manual') setWanted(true);
@@ -670,11 +815,11 @@ window.__ModuleLoader__.load({
             if (result.status !== 'ok') throw new Error(result.message ?? '没保存上');
             // The Host answers with the whole gate, other blocks' changes included.
             if (typeof result.mode === 'string' && Array.isArray(result.sessions)) {
-              setGate({ mode: result.mode, sessions: result.sessions });
+              setSharedGate({ mode: result.mode, sessions: result.sessions });
             }
           })
           .catch((error) => {
-            setGate(previous);
+            setSharedGate(previous);
             setModeError(error instanceof Error ? error.message : String(error));
           });
       };
@@ -686,32 +831,6 @@ window.__ModuleLoader__.load({
         document.addEventListener('click', close);
         return () => document.removeEventListener('click', close);
       }, [menuOpen, modeOpen]);
-
-      /** Read the mode once, so a Turn nobody asked about stays quiet. */
-      useEffect(() => {
-        if (!usable) return undefined;
-        let live = true;
-        requestGate()
-          .then((result) => {
-            if (!live) return;
-            if (result.status !== 'ok') throw new Error(result.message ?? '读不到设置');
-            setGate({
-              mode: result.mode,
-              sessions: Array.isArray(result.sessions) ? result.sessions : [],
-            });
-            // 手动 means nothing happens until asked: the block starts folded so the
-            // reader only ever sees a 「› 速览」 line and opens it on purpose.
-            if (result.mode === 'manual') setOpen(false);
-          })
-          .catch(() => {
-            // Unreadable settings must not start spending: fall back to the
-            // default, a folded line that waits for a click.
-            if (!live) return;
-            setGate({ mode: 'manual', sessions: [] });
-            setOpen(false);
-          });
-        return () => { live = false; };
-      }, [usable, sessionId]);
 
       useEffect(() => {
         if (!usable || !started) return undefined;
@@ -745,6 +864,7 @@ window.__ModuleLoader__.load({
 
       const ready = phase.kind === 'ready';
       const shown = started && open;
+      if (shown) ensureStyle();
       const body = [];
       if (phase.kind === 'loading') {
         // Same reading as 「深度求索中」 above: the light runs across the words, and the
@@ -850,8 +970,6 @@ window.__ModuleLoader__.load({
       }
 
       return h('section', { style: started ? CARD : BARE },
-        // The sheet travels with the body it styles, so nothing leaks into the app.
-        shown ? h('style', { key: 'ra-css' }, CSS) : null,
         h('div', { style: HEAD },
           h('button', {
             style: DISCLOSURE,
@@ -887,6 +1005,11 @@ window.__ModuleLoader__.load({
                 onClick: () => setAttempt((n) => n + 1),
               }, h(RefreshIcon)))
           : null);
+    }
+
+    // The test suite reaches the pure helpers through this hook; the app never sets it.
+    if (typeof window.__DSH_INTERPRETER_TEST__ === 'function') {
+      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, renderBlock });
     }
 
     return {

@@ -67,6 +67,14 @@ Generates an independent "Condensed View" summary block below each DSH response,
 * **计费与缓存**：每次生成对应一次模型调用；若首次生成结果超出字数预算的 1.5 倍，插件会基于草稿自动执行二次压缩（界面显示的 Token 数为两次调用之和）。生成结果按「会话 + 轮次序号」缓存，重复展开不重复计费；切换模型后缓存自动清空。
 * **数据边界**：除将当前轮次已生成的回答发送至用户所选的摘要模型接口外，不向任何第三方上传数据。
 
+### 开发
+
+```bash
+npm test
+```
+
+测试用 Node 自带的 `node:test`，不装任何依赖：Host 端用模拟的会话日志和模型流驱动三个路由，Client 端测链接过滤和 Markdown 解析。
+
 ### 迭代计划 (Roadmap)
 
 1. **可视化设置页**：支持在前端界面直接调整 `minChars`、`maxChars`、`ratio`、`temperature` 及编辑提示词，无需修改 YAML。
@@ -138,6 +146,14 @@ Effective summarization relies on **explanatory clarity and information restruct
 
 * **Billing & Caching**: Each rewrite is a standalone model call. If the initial draft exceeds 1.5× the target length budget, a second compression pass is executed automatically (the displayed token usage reflects the sum of both calls). Results are cached by session and sequence number; reopening a block is free, and switching models clears the cache.
 * **Data Boundary**: No data is uploaded anywhere except sending the finalized turn response to your configured rewrite provider.
+
+### Development
+
+```bash
+npm test
+```
+
+The suite runs on Node's built-in `node:test` with no dependencies: the Host routes are driven against a scripted session log and model stream, and the Client's link filter and Markdown reader are tested directly.
 
 ### Roadmap
 
