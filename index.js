@@ -8,10 +8,6 @@
  * model's context and the original answer are never touched.
  */
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
-
 /** Local route the Client module posts to. */
 const ROUTE_PATH = '/interpreter/rewrite'
 
@@ -21,20 +17,6 @@ const CONFIG_PATH = '/interpreter/config'
 
 /** The three ways a new answer can get a 速览. */
 const MODES = ['global', 'session', 'manual']
-
-/** The file the page's own choices are remembered in. */
-const CONFIG_NAME = 'dsh-interpreter.json'
-
-/**
- * The profile this Host was launched with. The Host says so itself; the
- * environment and the desktop default only stand in when it does not.
- * @param ctx - Host plugin lifetime.
- */
-function profileDirectory(ctx) {
-  const dir = ctx.profileContext?.dir
-  if (typeof dir === 'string' && dir !== '') return dir
-  return process.env.DSH_PROFILE_DIR ?? join(homedir(), '.dsh', 'profiles', process.env.DSH_PROFILE ?? 'desktop')
-}
 
 /** Largest request body accepted from the page, in bytes. */
 const MAX_BODY_BYTES = 4096
@@ -93,7 +75,7 @@ const DEFAULTS = {
 }
 
 /** Services required before the route can be installed. */
-export const inject = ['webServer', 'llm', 'sessions', 'profileContext']
+export const inject = ['webServer', 'llm', 'sessions', 'connection']
 
 /**
  * Last text block set of the assistant answer committed in the Turn that closes
@@ -101,8 +83,8 @@ export const inject = ['webServer', 'llm', 'sessions', 'profileContext']
  * must not borrow the answer of the one before it.
  * @param session - live session owning the Turn.
  * @param upto - the Turn's closing sequence.
- * @returns the answer text and when it was committed, or undefined when the
- *   Turn answered no text.
+ * @returns the answer text, when it was committed and whether the reader
+ *   stopped it, or undefined when the Turn answered no text.
  */
 function answerAt(session, upto) {
   const nodes = session.surface.nodes
@@ -128,7 +110,7 @@ function answerAt(session, upto) {
       .map((block) => block.text)
       .join('\n\n')
       .trim()
-    if (text !== '') return { text, time: event.time }
+    if (text !== '') return { text, time: event.time, interrupted: event.data?.interrupted === true }
   }
   return undefined
 }
@@ -181,43 +163,15 @@ export function apply(ctx, config) {
     if (value !== undefined) patch[key] = value
   }
 
-  /** Where the page's choices live: the launched profile, not a guessed one. */
-  const configFile = join(profileDirectory(ctx), CONFIG_NAME)
-
-  /** The page's choice, loaded once and rewritten on every save. */
-  let saved = {}
-  const ready = (async () => {
-    try {
-      // Editors on Windows like to prepend a BOM, which JSON.parse rejects.
-      const raw = await readFile(configFile, 'utf8')
-      const parsed = JSON.parse(raw.replace(/^\uFEFF/, ''))
-      if (parsed !== null && typeof parsed === 'object') saved = parsed
-    } catch {
-      // Nothing saved yet, or unreadable: the defaults stand.
-    }
-  })()
-
-  /** The last save on its way to disk; the next one waits for it. */
-  let writing = Promise.resolve()
-
-  /** Defaults, then the patch, then the page's own choice. */
-  const settings = async () => {
-    await ready
-    return { ...DEFAULTS, ...patch, ...saved }
-  }
-
-  /** Answers committed before this moment were not written while the bundle ran. */
-  const startedAt = Date.now()
+  /** Built-in defaults, then the row this Host was loaded with. */
+  const settings = () => ({ ...DEFAULTS, ...patch })
 
   /**
-   * Automatic modes only reach answers committed after they were switched on,
-   * and after this process started: opening an old Session must not rewrite
-   * its whole history.
+   * Automatic modes only reach answers committed while this bundle ran: opening
+   * an old Session must not rewrite its whole history. A save rewrites the
+   * profile, which restarts the plugin and starts this clock again.
    */
-  const autoSince = async () => {
-    const options = await settings()
-    return Math.max(startedAt, typeof options.autoSince === 'number' ? options.autoSince : 0)
-  }
+  const startedAt = Date.now()
 
   /** Rewrite results, including the decisions not to rewrite. */
   const cache = new Map()
@@ -370,7 +324,10 @@ export function apply(ctx, config) {
       // for by hand, and that request must go through.
       const session = ctx.sessions.get(sessionId)
       const answer = session === undefined ? undefined : answerAt(session, seq)
-      if (answer !== undefined && !(typeof answer.time === 'number' && answer.time >= await autoSince())) {
+      // A stopped answer is only a prefix of what the reader meant to say; nobody
+      // asked for this Turn by hand, so leave it alone.
+      if (answer?.interrupted === true) return { status: 'skip', reason: 'interrupted' }
+      if (answer !== undefined && !(typeof answer.time === 'number' && answer.time >= startedAt)) {
         return { status: 'skip', reason: 'history' }
       }
     }
@@ -384,7 +341,7 @@ export function apply(ctx, config) {
         const answer = answerAt(session, seq)
         if (answer === undefined) return { status: 'skip', reason: 'no-answer' }
         const text = answer.text
-        const options = await settings()
+        const options = settings()
         if (text.length < options.minChars) return { status: 'skip', reason: 'too-short' }
         if (text.length > options.maxChars) return { status: 'skip', reason: 'too-long' }
         // The reader meets this once, then picks a model from the block itself.
@@ -455,16 +412,66 @@ export function apply(ctx, config) {
     return providers
   }
 
+  /**
+   * Answer a request the page did not send. These routes read a Session's text
+   * and change this profile's settings, so another local program must not reach
+   * them; the Host's own check covers Host/Origin and the browser's login.
+   * @param req - the request, before any body is read.
+   * @param res - the response, answered here when the check refuses.
+   * @returns true when the request was answered as unauthenticated.
+   */
+  function rejected(req, res) {
+    const rejection = ctx.connection.requestRejection(req)
+    if (rejection === undefined) return false
+    res.statusCode = rejection
+    res.end()
+    return true
+  }
+
+  /**
+   * Merge the page's change into the profile's config row. The editor owns that
+   * file, validates the candidate and refuses a value a higher layer overrides,
+   * so a save that cannot happen is reported instead of assumed.
+   * @param next - the fields this request sets.
+   * @param lists - the Session-list operations, when this request carries any.
+   * @returns the config the row holds afterwards.
+   */
+  async function persist(next, lists) {
+    const entry = ctx.fiber?.entry
+    const editor = ctx.get('configEditor')
+    if (entry === undefined || editor === undefined) throw new Error('this profile cannot save settings')
+    let kept
+    // The row replaces the whole config, so keep every field the reader already
+    // has: sending only the change would silently drop the rest. The list is
+    // applied to the row as it is now, so two saves in a row both count.
+    await editor.edit(entry, (current) => {
+      const before = { ...DEFAULTS, ...patch, ...current }
+      let list
+      if (lists !== undefined) {
+        list = lists.sessions ?? (Array.isArray(before.sessions) ? before.sessions : [])
+        if (lists.addSessions !== undefined) list = [...list, ...lists.addSessions]
+        if (lists.removeSessions !== undefined) list = list.filter((id) => !lists.removeSessions.includes(id))
+        // The newest entries are kept when the list overflows.
+        list = [...new Set(list)].slice(-MAX_SESSIONS)
+      }
+      kept = { ...current, ...next }
+      if (list !== undefined) kept.sessions = list
+      return kept
+    })
+    return kept
+  }
+
   /** The page reads the model list and the model in force. */
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: MODELS_PATH,
     handler: async (req, res) => {
+      if (rejected(req, res)) return
       if (req.method !== 'GET') {
         reply(res, 405, { status: 'error', message: 'GET only' })
         return
       }
-      const options = await settings()
+      const options = settings()
       reply(res, 200, {
         status: 'ok',
         provider: options.provider,
@@ -479,8 +486,9 @@ export function apply(ctx, config) {
     kind: 'exact',
     path: CONFIG_PATH,
     handler: async (req, res) => {
+      if (rejected(req, res)) return
       if (req.method === 'GET') {
-        const options = await settings()
+        const options = settings()
         reply(res, 200, {
           status: 'ok',
           mode: MODES.includes(options.mode) ? options.mode : DEFAULTS.mode,
@@ -542,50 +550,19 @@ export function apply(ctx, config) {
         reply(res, 400, { status: 'error', message: 'nothing to save' })
         return
       }
-      await ready
-      // From here to the assignment nothing awaits, so concurrent saves merge
-      // into the latest list instead of overwriting one another.
-      const before = { ...DEFAULTS, ...patch, ...saved }
-      const wasMode = MODES.includes(before.mode) ? before.mode : DEFAULTS.mode
-      const had = Array.isArray(before.sessions) ? before.sessions.filter((id) => typeof id === 'string') : []
-      if (Object.keys(sessionLists).length > 0) {
-        let list = sessionLists.sessions ?? had
-        if (sessionLists.addSessions !== undefined) list = [...list, ...sessionLists.addSessions]
-        if (sessionLists.removeSessions !== undefined) list = list.filter((id) => !sessionLists.removeSessions.includes(id))
-        // The newest entries are kept when the list overflows.
-        next.sessions = [...new Set(list)].slice(-MAX_SESSIONS)
-      }
-      // Turning automation on, or widening it to another Session, starts its
-      // clock now: only answers committed from here on are rewritten unasked.
-      if (next.mode !== undefined || next.sessions !== undefined) {
-        const nowMode = next.mode ?? wasMode
-        const widened = (next.sessions ?? []).some((id) => !had.includes(id))
-        if (nowMode !== 'manual' && (nowMode !== wasMode || widened)) next.autoSince = Date.now()
-      }
-      saved = { ...saved, ...next }
-      const snapshot = `${JSON.stringify(saved, null, 2)}\n`
-      // Saves land on disk one at a time, in the order they were decided.
-      const write = writing.then(async () => {
-        await mkdir(dirname(configFile), { recursive: true })
-        await writeFile(configFile, snapshot, 'utf8')
-      })
-      writing = write.catch(() => {})
+      // The editor re-reads the row for every save, so a Session list is applied
+      // to the config as it is now, not to the copy this run started with.
+      let after
       try {
-        await write
+        after = await persist(next, Object.keys(sessionLists).length > 0 ? sessionLists : undefined)
       } catch (error) {
         reply(res, 500, { status: 'error', message: error instanceof Error ? error.message : String(error) })
         return
       }
-      // A different model makes every remembered rewrite stale; a mode does not.
-      if (next.provider !== undefined) {
-        cache.clear()
-        cacheGeneration += 1
-      }
-      const after = { ...DEFAULTS, ...patch, ...saved }
       reply(res, 200, {
         status: 'ok',
         ...next,
-        // The whole gate, so the block that saved can drop its stale copy.
+        // The row's own value answers when this request did not set the mode.
         mode: MODES.includes(after.mode) ? after.mode : DEFAULTS.mode,
         sessions: Array.isArray(after.sessions) ? after.sessions : [],
       })
@@ -596,6 +573,7 @@ export function apply(ctx, config) {
     kind: 'exact',
     path: ROUTE_PATH,
     handler: async (req, res) => {
+      if (rejected(req, res)) return
       if (req.method !== 'POST') {
         reply(res, 405, { status: 'error', message: 'POST only' })
         return

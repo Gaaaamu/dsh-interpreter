@@ -5,21 +5,19 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { apply, inject } from '../index.js'
 
 const LONG = 'x'.repeat(600)
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
- * One Host with its own profile directory.
+ * One Host against stand-in DSH services. A save rewrites the plugin's config
+ * row and restarts it, exactly as the Host does, so the next request meets the
+ * config the save left behind.
  * @param model - `async function* (request, call)`: what the model streams back.
+ * @param options - `rejection`: what the Host's own request check answers.
  */
-async function host(model) {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-interpreter-'))
-  const dir = join(root, 'nested', 'profile')
+async function host(model, options = {}) {
   const log = { events: {}, nodes: [] }
   const session = {
     surface: { get nodes() { return log.nodes } },
@@ -27,9 +25,21 @@ async function host(model) {
     deriveEventMessage: (event) => ({ content: [{ type: 'text', text: event.text }] }),
   }
   const routes = {}
-  const state = { calls: 0, active: 0, peak: 0 }
+  const state = { calls: 0, active: 0, peak: 0, saves: 0 }
+  const row = { options: { config: { provider: 'p', model: 'm' } } }
+  const editor = {
+    /** Replace the row's config wholesale, then restart the plugin. */
+    async edit(entry, change) {
+      const current = structuredClone(entry.options.config ?? {})
+      entry.options.config = change(current, {})
+      state.saves += 1
+      apply(ctx, entry.options.config)
+    },
+  }
   const ctx = {
-    profileContext: { dir },
+    connection: { requestRejection: () => options.rejection },
+    fiber: { entry: row },
+    get: (name) => (name === 'configEditor' ? editor : undefined),
     effect: (install) => install(),
     webServer: { register: (route) => { routes[route.path] = route.handler } },
     sessions: { get: () => session },
@@ -48,7 +58,7 @@ async function host(model) {
       },
     },
   }
-  apply(ctx, { provider: 'p', model: 'm' })
+  apply(ctx, row.options.config)
 
   /** Replace the Session log; events are numbered from 1. */
   const setLog = (events) => {
@@ -64,9 +74,13 @@ async function host(model) {
     req.headers = { 'content-type': 'application/json' }
     const res = new EventEmitter()
     res.writableEnded = false
+    res.statusCode = 200
     res.writeHead = () => {}
     const done = new Promise((resolve) => {
-      res.end = (text) => { res.writableEnded = true; resolve(JSON.parse(text)) }
+      res.end = (text) => {
+        res.writableEnded = true
+        resolve(typeof text === 'string' ? JSON.parse(text) : { status: res.statusCode })
+      }
     })
     routes[path](req, res)
     setImmediate(() => { req.emit('data', Buffer.from(JSON.stringify(body ?? {}))); req.emit('end') })
@@ -74,7 +88,7 @@ async function host(model) {
   }
   const rewrite = (body) => send('/interpreter/rewrite', body)
   const config = (body) => send('/interpreter/config', body)
-  return { dir, root, state, setLog, rewrite, config, cleanup: () => rm(root, { recursive: true, force: true }) }
+  return { state, setLog, rewrite, config, cleanup: async () => {} }
 }
 
 /** A model that answers `text`, optionally after `delay` ms, honouring aborts. */
@@ -93,8 +107,29 @@ const answers = (text, delay = 0) => async function* (request, call) {
 
 const answer = (time = Date.now() + 1000) => ({ type: 'assistant/message', data: { turn: 1 }, text: LONG, time })
 
-test('the plugin asks for the profile context', () => {
-  assert.ok(inject.includes('profileContext'))
+test('the plugin asks for the connection it authenticates with', () => {
+  assert.ok(inject.includes('connection'))
+  assert.ok(!inject.includes('profileContext'))
+})
+
+test('a request the Host refuses is answered before its body is read', async () => {
+  const h = await host(answers('ok'), { rejection: 401 })
+  const refused = await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.equal(refused.status, 401)
+  assert.equal(h.state.calls, 0)
+  assert.equal((await h.config({ mode: 'global' }).done).status, 401)
+})
+
+test('an answer the reader stopped is not rewritten unasked', async () => {
+  const h = await host(answers('ok'))
+  h.setLog([{ ...answer(), data: { turn: 1, interrupted: true } }])
+  assert.deepEqual(await h.rewrite({ sessionId: 's', seq: 1, auto: true }).done, {
+    status: 'skip',
+    reason: 'interrupted',
+  })
+  assert.equal(h.state.calls, 0)
+  assert.equal((await h.rewrite({ sessionId: 's', seq: 1 }).done).status, 'ok')
+  await h.cleanup()
 })
 
 test('a Turn without answer text does not borrow the one before it', async () => {
@@ -123,8 +158,7 @@ test('automatic requests skip answers older than the switch, asked ones do not',
 
   h.setLog([answer(Date.now())])
   await sleep(5)
-  const saved = await h.config({ mode: 'global' }).done
-  assert.equal(typeof saved.autoSince, 'number')
+  await h.config({ mode: 'global' }).done
   assert.equal((await h.rewrite({ sessionId: 'b', seq: 1, auto: true }).done).reason, 'history')
   h.setLog([answer(Date.now() + 1000)])
   assert.equal((await h.rewrite({ sessionId: 'c', seq: 1, auto: true }).done).status, 'ok')
@@ -208,8 +242,7 @@ test('the allow-list merges concurrent changes and supports removal', async () =
   const removed = await h.config({ removeSessions: ['A'] }).done
   assert.deepEqual(removed.sessions, ['B'])
   assert.equal(removed.mode, 'session')
-  const file = JSON.parse(await readFile(join(h.dir, 'dsh-interpreter.json'), 'utf8'))
-  assert.deepEqual(file.sessions, ['B'])
+  assert.equal(h.state.saves, 3)
   await h.cleanup()
 })
 

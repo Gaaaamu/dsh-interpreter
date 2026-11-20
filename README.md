@@ -36,7 +36,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 #### 2. 首次配置与运行模式
 插件安装后默认处于**手动模式**，不会自动触发调用产生费用：
 1. 点击回答下方的「› 速览」展开区块，在右上角「模型」下拉菜单中选择当前环境中可用的 `provider / model`。
-2. 根据使用习惯切换运行模式（配置持久化保存在当前 Profile 目录（DSH 提供的 `profileContext.dir`）下的 `dsh-interpreter.json` 中，目录不存在会自动创建；文件无法读取时回退到手动模式）：
+2. 根据使用习惯切换运行模式（选择存进当前 Profile 的配置行，即 `cordis.patch.yml` 里 `- id: interpreter` 的 `config`，由界面经 DSH 的配置接口写回）：
 
 | 模式 | 行为说明 |
 | :--- | :--- |
@@ -44,11 +44,11 @@ Generates an independent "Condensed View" summary block below each DSH response,
 | `本会话` | 仅对加入白名单的会话中，加入之后的新回答自动生成摘要 |
 | `全部` | 开启之后符合长度条件的新回答自动生成摘要 |
 
-自动模式只管**开启之后**新写出来的回答：翻开旧会话、或重启 DSH 之后，以前的回答仍然只是一行「› 速览」，点了才生成，不会一口气补跑整段历史。同一时间最多 2 个改写在跑，其余排队。
+自动模式只管**开启之后**新写出来的回答：翻开旧会话、或重启 DSH 之后，以前的回答仍然只是一行「› 速览」，点了才生成，不会一口气补跑整段历史；你中途停掉的回答也不会自动整理，点了才整理。同一时间最多 2 个改写在跑，其余排队。
 
 ### 参数配置
 
-可在 `cordis.patch.yml` 的 `- id: interpreter` 下通过 `config` 字段调整参数（优先级：内置默认 < YAML `config` < `dsh-interpreter.json` 界面配置）：
+可在 `cordis.patch.yml` 的 `- id: interpreter` 下通过 `config` 字段调整参数（优先级：内置默认 < 该行 `config`；界面上的选择也写回这一行）：
 
 | 参数 | 默认值 | 说明 |
 | :--- | :--- | :--- |
@@ -116,7 +116,7 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 #### 2. Initial Setup & Modes
 The plugin defaults to **Manual** mode so no calls are made automatically upon installation:
 1. Click "› 速览" below a response and open the "模型" (Model) menu to select an available `provider / model` exposed by `ctx.llm`.
-2. Switch modes as needed (persisted in `dsh-interpreter.json` in the launched profile's directory, DSH's `profileContext.dir`, created if missing; if the file cannot be read, the plugin falls back to manual mode):
+2. Switch modes as needed (the choice lives in the profile's config row, `config` of `- id: interpreter` in `cordis.patch.yml`, written back by the UI through DSH's config API):
 
 | Mode | Behavior |
 | :--- | :--- |
@@ -124,11 +124,11 @@ The plugin defaults to **Manual** mode so no calls are made automatically upon i
 | `本会话` (This Session) | Automatically summarizes new responses in allow-listed sessions, from the moment they were added |
 | `全部` (All) | Automatically summarizes every eligible new response after it is switched on |
 
-Automatic modes only cover answers written **after** they were switched on: opening an old session, or restarting DSH, leaves earlier answers as a folded 「› 速览」 line that waits for a click, so history is never rewritten in bulk. At most two rewrites run at once; the rest queue.
+Automatic modes only cover answers written **after** they were switched on: opening an old session, or restarting DSH, leaves earlier answers as a folded 「› 速览」 line that waits for a click, so history is never rewritten in bulk. An answer you stopped midway is skipped too until you click. At most two rewrites run at once; the rest queue.
 
 ### Configuration
 
-Parameters can be tuned under `config` of `- id: interpreter` in `cordis.patch.yml` (precedence: built-in defaults < YAML `config` < `dsh-interpreter.json`):
+Parameters can be tuned under `config` of `- id: interpreter` in `cordis.patch.yml` (precedence: built-in defaults < that row's `config`; UI choices are written back to the same row):
 
 | Key | Default | Description |
 | :--- | :--- | :--- |
