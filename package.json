@@ -28,6 +28,14 @@
   "scripts": {
     "test": "node --test test/*.test.js"
   },
+  "peerDependencies": {
+    "@deepseek-ai/schemastery": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  },
   "engines": {
     "dsh": ">=0.2.2-rc.1 <0.3.0-0"
   },
