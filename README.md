@@ -80,10 +80,30 @@ npm test
 
 ### 迭代计划 (Roadmap)
 
-1. **可视化设置页**：支持在前端界面直接调整 `minChars`、`maxChars`、`ratio`、`temperature` 及编辑提示词，无需修改 YAML。
-2. **场景化预设 (Presets)**：将「提示词 + 摘要模型 + 目标长度」封装为预设，支持按模型特性与任务类型（代码配置、概念解释、数据分析）灵活匹配，并逐步支持自动匹配。
-3. **多视角快捷切换**：在同一摘要栏提供多种预设入口（如类比解析、场景化叙述、配合可视化技能生成图表等）。
-4. **预设导入与共享**：支持以 JSON 格式导入/导出预设，并内置常用预设模板。
+按优先级排列。
+
+#### 近期：让结论先到
+1. **流式输出**：改写结果边生成边显示，第一句结论出来即可阅读；超出预算时先展示首版，二次压缩完成后再替换。
+2. **收起态显示结论**：折叠行直接带上结论句（如 `› 速览 · 根因是……`），不展开也能获取核心信息。
+3. **长度上限**：目标长度改为「比例 + 绝对上限」，避免长回答产出长速览；速览中的代码块默认折叠，或仅保留第一条需要执行的命令。
+4. **更靠前的位置**：若宿主提供回答顶部插槽，将结论置于回答上方；否则在回答完成时提供「跳到速览」提示。
+
+#### 中期：降低理解成本
+5. **模式分层**：全局默认模式移至设置页，块内只保留「本会话自动速览」开关，明确每个控件的作用范围。
+6. **按条件显示入口**：仅在符合长度条件的回答下显示「› 速览」，短回答与纯工具轮次不再显示入口。
+7. **首次引导**：未选模型时点击速览，直接弹出模型卡片并标注推荐项，选定后立即生成当前这一条。
+8. **可视化设置页**：在前端调整长度档位（简短 / 适中）、模型与提示词；`temperature`、`minChars`、`maxChars` 收入高级选项，无需修改 YAML。
+
+#### 后续：扩展价值
+9. **复制与引用**：一键复制速览，或引用到输入框继续追问（仅在用户主动操作时进入对话上下文）。
+10. **要点溯源**：每条要点可跳转至原文对应段落，便于核对。
+11. **缓存持久化**：生成结果落盘保存（仍不写入 Session Log），重启 DSH 后重复展开不再计费。
+12. **质量反馈**：本地记录「有用 / 太长 / 漏了重点」等反馈，为预设调优提供依据。
+13. **场景化预设 (Presets)**：将「提示词 + 摘要模型 + 目标长度」封装为预设，按任务类型（代码配置、概念解释、数据分析）匹配，支持 JSON 导入/导出并内置常用模板。
+
+#### 待评估
+* **多视角切换**（类比解析、场景化叙述、配合可视化技能生成图表等）：这类视角偏向「解释」而非「压缩」，需先明确产品定位再决定是否推进。
+* **本轮变更摘要**：面向 agent 类会话，将整轮的工具调用纳入，汇总改动的文件、执行的命令以及需要用户决定的事项。
 
 ### 许可证
 
@@ -163,10 +183,30 @@ The suite runs on Node's built-in `node:test` with no dependencies: the Host rou
 
 ### Roadmap
 
-1. **Visual Settings Page**: Adjust `minChars`, `maxChars`, `ratio`, `temperature`, and custom prompts directly in the UI without editing YAML.
-2. **Scenario Presets**: Bundle "prompt + model + target length" into presets tailored to specific model behaviors or task types (code/config, conceptual explanation, data analysis), with optional auto-matching.
-3. **One-Click Alternate Views**: Expose quick preset switches on the summary bar (e.g., analogy-based explanation, narrative walkthrough, or visual diagrams).
-4. **Preset Sharing**: Import/export presets as JSON and ship curated built-in templates.
+Listed by priority.
+
+#### Near Term: Put the Conclusion First
+1. **Streaming Output**: Render the rewrite as it is generated, so the bottom line is readable as soon as its first sentence lands; when a draft exceeds the budget, show it first and swap in the tightened version once ready.
+2. **Conclusion in the Folded Row**: Show the one-sentence conclusion on the collapsed line (e.g., `› 速览 · Root cause is …`), so the core takeaway is available without expanding.
+3. **Length Cap**: Set the target length as a ratio with an absolute ceiling, so long answers no longer produce long summaries; code blocks inside the summary fold by default, or only the first command to run is kept.
+4. **Earlier Placement**: If the host exposes a slot above the answer, place the conclusion there; otherwise offer a "jump to summary" hint when the answer finishes.
+
+#### Mid Term: Easier to Understand
+5. **Layered Modes**: Move the global default mode to the settings page and keep only an "auto-summarize this session" toggle in the block, so the scope of each control is clear.
+6. **Entry Only Where It Applies**: Show 「› 速览」 only under answers that meet the length threshold; short answers and tool-only turns get no entry.
+7. **First-Run Guidance**: When no model is selected, clicking the block opens the model card directly with recommended picks marked, then generates the current answer right after a pick.
+8. **Visual Settings Page**: Adjust a length level (brief / standard), the model, and the prompt in the UI; `temperature`, `minChars`, and `maxChars` move under advanced options, with no YAML editing required.
+
+#### Later: More Value per Summary
+9. **Copy & Quote**: Copy the summary in one click, or quote it into the composer to follow up (it enters the conversation context only when you do this yourself).
+10. **Traceable Points**: Each bullet links back to the paragraph of the original it came from, for quick verification.
+11. **Persistent Cache**: Save results to disk (still outside the Session Log), so reopening after a DSH restart costs nothing.
+12. **Quality Feedback**: Record local feedback such as "useful / too long / missed the point" to guide preset tuning.
+13. **Scenario Presets**: Bundle "prompt + model + target length" into presets matched to task types (code/config, conceptual explanation, data analysis), with JSON import/export and curated built-in templates.
+
+#### Under Consideration
+* **Alternate Views** (analogy-based explanation, narrative walkthrough, visual diagrams): these lean toward *explaining* rather than *condensing*; the product's positioning needs settling before committing to them.
+* **Turn Change Digest**: For agent sessions, cover the whole turn's tool calls and summarize the files changed, the commands run, and the decisions left to the user.
 
 ### License
 
