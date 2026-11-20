@@ -46,11 +46,11 @@
 
 每条速览右上角有「模型」。点开是一张二级卡片，悬浮在按钮下方，列出当前所有能用的 provider / model，当前那个加粗；点一下就是选中，卡片自己收起，这一条立刻用新模型重做，以后都按新的来。不占原位，所以头一行的宽度不会变。
 
-选择存进当前 profile 的配置行：`cordis.patch.yml` 里 `- id: interpreter` 的 `config`。插件不自己维护配置文件，存盘走 DSH 的配置接口（`ctx.fiber.entry` + `configEditor`），所以和别的设置一样由 DSH 校验、写入。删掉这一行里的 `config` 就回到内置默认。
+选择存进**当前 profile 目录下**的 `cordis.patch.yml`：其中 `- id: interpreter` 那一行的 `config`。插件包里那份同名文件只是安装时的初始值；界面第一次保存后，profile 里这一行会带上完整的 `config` 并整份替代它，之后调参请改 profile 目录下的那份。插件不自己维护配置文件，存盘走 DSH 的配置接口（`ctx.fiber.entry` + `configEditor`），所以和别的设置一样由 DSH 校验、写入。删掉这一行里的 `config` 就回到内置默认。
 
 ### 其他参数：改 YAML
 
-`cordis.patch.yml` 里 `- id: interpreter` 的 `config`：
+当前 profile 目录下 `cordis.patch.yml` 里 `- id: interpreter` 的 `config`：
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
@@ -73,7 +73,8 @@
 - Host 半边注册三个路由：
   - `POST /interpreter/rewrite`：从 Session 日志里取出这一轮落盘的 assistant 正文，调用 `ctx.llm.stream` 改写，结果按「会话 + 序号」缓存。每次调用的 `usage` 块会被收下来，压成 `{inputTokens, outputTokens, totalTokens}` 一并返回；压了两遍就把两次相加，因为那是两次真实计费。
   - `GET /interpreter/models`：列出 `ctx.llm.listProviders()` × `listModels()` 的可选组合，外加当前值。
-  - `POST /interpreter/config`：校验 provider/model 确实在清单里，再经 DSH 的配置接口写进本 profile `- id: interpreter` 那一行；存盘会让插件重挂载，改写缓存随之清空（正在跑的旧模型改写落地时也不会再写回缓存）。白名单用 `addSessions` / `removeSessions` 增删，不再整份覆盖，多个块同时改也不会互相冲掉；回包带上完整的 `mode` 和 `sessions`。改写路由收到 `auto: true` 的请求时，落盘时间早于本次启动的回答回 `skip: history`，被中断（`interrupted`）的回答回 `skip: interrupted`，都不调模型、不进缓存。三个路由先过 DSH 的连接校验（`ctx.connection.requestRejection`）：没通过的直接 401/403，body 都不读。
+  - `GET /interpreter/config`：返回当前的 `mode`、`sessions`，以及 `live`。`live: true` 表示 `Config` 已经声明成功、DSH 把保存的字段作为 live 引用交给了插件，保存时就地生效；`live: false` 表示没加载到 schema 库，每次保存都会重启插件。在 DSH 的开发者工具控制台里运行 `await (await fetch('/interpreter/config')).json()` 就能看到。
+  - `POST /interpreter/config`：校验 provider/model 确实在清单里，再经 DSH 的配置接口写进本 profile `- id: interpreter` 那一行。插件导出的 `Config` 把 `provider`、`model`、`mode`、`sessions`、`autoSince` 声明为 `.volatile()`（live 字段），存盘时 DSH 就地更新它们、不重启插件，代码每次用时都用 `.get()` 读当前值；正在跑的改写、缓存、路由都不受影响。缓存键带上 provider/model，换模型后不会拿到旧模型的结果，切回旧模型时旧结果仍可用。`Config` 依赖 DSH 自带的 `@deepseek-ai/schemastery`，插件用动态 import 加载。DSH 只让插件解析它在 `package.json` 里声明过的包，所以这里把它声明成可选的 `peerDependencies`：不写这一行，import 会悄悄失败，插件退回重启模式（可以用 `GET /interpreter/config` 返回的 `live` 字段确认）。加载不到时不声明 `Config`，退回「存盘即重启插件」的行为，功能不变。白名单用 `addSessions` / `removeSessions` 增删，不再整份覆盖，多个块同时改也不会互相冲掉；回包带上完整的 `mode` 和 `sessions`。打开自动模式（或往白名单里加会话）时记下 `autoSince`；改写路由收到 `auto: true` 的请求时，落盘时间早于 `autoSince` 和本次启动时间的回答回 `skip: history`，被中断（`interrupted`）的回答回 `skip: interrupted`，都不调模型、不进缓存。三个路由先过 DSH 的连接校验（`ctx.connection.requestRejection`）：没通过的直接 401/403，body 都不读。
   - 同一轮的多个请求共用一次改写；只有等它的请求全部离开才会中断，一个页面关掉不会连累另一个。第二遍压缩失败时保留第一版，不整条报错；模型流以 `stop` 以外的方式结束一律算失败，截断的半截不会当结果缓存。
   - 取正文只在这一轮里找（按事件的 `data.turn` 和 `turn/start` 划界），没有正文的轮次不会借上一轮的回答。
 - Client 半边往 `conversation.chat.turnTail` 塞一个块，挂载时请求改写路由，带「整理中（亮光 + 逐次变长的省略号） / 速览折叠三角 / 花费 / 重新整理 / 重试 / 模型二级卡片」；正文的排版和链接图标在这一半就地渲染，只用 DSH 的样式和主题变量，不引外部样式表。整页只插一份样式表（规则都挂在 `ra-` 前缀下），设置也整页只读一次、各块共用，改了模式其他块立刻跟着变。

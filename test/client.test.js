@@ -23,7 +23,7 @@ globalThis.window = {
   __DSH_INTERPRETER_TEST__: (exposed) => { helpers = exposed },
 }
 new Function(source)()
-const { blocks, inline, safeHref, tableCells, effectiveMode, renderBlock } = helpers
+const { blocks, inline, safeHref, tableCells, effectiveMode, renderBlock, readReply } = helpers
 
 /** The href of every link in an inline run, or the text where a node is text. */
 const hrefs = (text) => inline(text, 'k').map((node) => (typeof node === 'string' ? node : node.props.href ?? node.type))
@@ -90,4 +90,20 @@ test('the mode a Session sees', () => {
   assert.equal(effectiveMode({ mode: 'session', sessions: ['s'] }, 's'), 'session')
   assert.equal(effectiveMode({ mode: 'session', sessions: ['t'] }, 's'), 'manual')
   assert.equal(effectiveMode({ mode: 'manual', sessions: ['s'] }, 's'), 'manual')
+})
+
+test('refused and failed replies turn into messages a reader can act on', async () => {
+  const reply = (status, body) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => {
+      if (body === undefined) throw new SyntaxError('Unexpected end of JSON input')
+      return body
+    },
+  })
+  assert.deepEqual(await readReply(reply(200, { status: 'ok' })), { status: 'ok' })
+  assert.throws(() => readReply(reply(401)), /登录已失效/)
+  assert.throws(() => readReply(reply(403)), /请求被拒绝/)
+  await assert.rejects(readReply(reply(400, { status: 'error', message: 'that model is not available right now' })), /not available/)
+  await assert.rejects(readReply(reply(500)), /HTTP 500/)
 })
