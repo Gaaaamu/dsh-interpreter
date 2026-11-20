@@ -78,6 +78,47 @@ const DEFAULTS = {
 export const inject = ['webServer', 'llm', 'sessions', 'connection']
 
 /**
+ * The schema library ships with DSH and is resolved from its installation.
+ * Where it cannot be found the plugin declares no Config: every field is then a
+ * plain value and a save restarts the plugin, which is slower but still right.
+ */
+const z = await import('@deepseek-ai/schemastery').then((module) => module.default ?? module, () => undefined)
+
+/**
+ * The row's config. The fields the page saves (provider, model, mode,
+ * sessions, autoSince) are declared live with `.volatile()`, so a save updates
+ * them in place instead of restarting the plugin: rewrites in flight keep
+ * running, the cache survives, and no request meets the gap between two
+ * instances. They are read on every use; see {@link read}. Changing an
+ * ordinary field still restarts the plugin.
+ */
+export const Config = z === undefined ? undefined : z.object({
+  provider: z.string().volatile(),
+  model: z.string().volatile(),
+  mode: z.string().volatile(),
+  sessions: z.array(z.string()).volatile(),
+  /** When automation was last switched on or widened, in epoch milliseconds. */
+  autoSince: z.number().volatile(),
+  temperature: z.number(),
+  ratio: z.number(),
+  minChars: z.number(),
+  maxChars: z.number(),
+  prompt: z.string(),
+})
+
+/** The marker DSH's live config references carry (shared across library copies). */
+const VOLATILE = Symbol.for('cosmokit.volatile.write')
+
+/**
+ * The current value of one config field, whether DSH handed over a live
+ * reference or, without a Config schema, a plain value.
+ * @param value - one field of the row's config.
+ */
+function read(value) {
+  return value !== null && typeof value === 'object' && VOLATILE in value ? value.get() : value
+}
+
+/**
  * Last text block set of the assistant answer committed in the Turn that closes
  * at `upto`. The search never leaves that Turn: a Turn that answered no text
  * must not borrow the answer of the one before it.
@@ -157,21 +198,32 @@ function reply(res, status, payload) {
  * @param config - optional overrides for {@link DEFAULTS}.
  */
 export function apply(ctx, config) {
-  /** The patch's own overrides. */
-  const patch = {}
-  for (const [key, value] of Object.entries(config ?? {})) {
-    if (value !== undefined) patch[key] = value
+  /**
+   * Built-in defaults, then the row's config as it is right now. Live fields
+   * change under a running plugin, so this is read per use, never kept.
+   */
+  const settings = () => {
+    const out = { ...DEFAULTS }
+    for (const [key, value] of Object.entries(config ?? {})) {
+      const current = read(value)
+      if (current !== undefined) out[key] = current
+    }
+    return out
   }
 
-  /** Built-in defaults, then the row this Host was loaded with. */
-  const settings = () => ({ ...DEFAULTS, ...patch })
+  /** Answers committed before this moment were not written while the bundle ran. */
+  const startedAt = Date.now()
 
   /**
-   * Automatic modes only reach answers committed while this bundle ran: opening
-   * an old Session must not rewrite its whole history. A save rewrites the
-   * profile, which restarts the plugin and starts this clock again.
+   * Automatic modes only reach answers committed after they were switched on,
+   * and after this plugin started: opening an old Session must not rewrite its
+   * whole history. A live save does not restart the plugin, so the switch is
+   * remembered in `autoSince` rather than in the start time.
    */
-  const startedAt = Date.now()
+  const autoSince = () => {
+    const since = settings().autoSince
+    return Math.max(startedAt, typeof since === 'number' ? since : 0)
+  }
 
   /** Rewrite results, including the decisions not to rewrite. */
   const cache = new Map()
@@ -312,7 +364,11 @@ export function apply(ctx, config) {
 
   /** Resolve one request, sharing in-flight work and caching settled results. */
   async function resolve(sessionId, seq, force, auto, signal) {
-    const key = `${sessionId}:${seq}`
+    /** The settings this request runs with, taken once so the key and the call agree. */
+    const options = settings()
+    // The model is part of the key: after a live switch, work done with the old
+    // model is neither served nor joined.
+    const key = `${options.provider}/${options.model}:${sessionId}:${seq}`
     if (force !== true && cache.has(key)) return cache.get(key)
     const joined = running.get(key)
     // Work everyone has already walked away from is being torn down; start afresh.
@@ -325,7 +381,7 @@ export function apply(ctx, config) {
       // A stopped answer is only a prefix of what the reader meant to say; nobody
       // asked for this Turn by hand, so leave it alone.
       if (answer?.interrupted === true) return { status: 'skip', reason: 'interrupted' }
-      if (answer !== undefined && !(typeof answer.time === 'number' && answer.time >= startedAt)) {
+      if (answer !== undefined && !(typeof answer.time === 'number' && answer.time >= autoSince())) {
         return { status: 'skip', reason: 'history' }
       }
     }
@@ -338,7 +394,6 @@ export function apply(ctx, config) {
         const answer = answerAt(session, seq)
         if (answer === undefined) return { status: 'skip', reason: 'no-answer' }
         const text = answer.text
-        const options = settings()
         if (text.length < options.minChars) return { status: 'skip', reason: 'too-short' }
         if (text.length > options.maxChars) return { status: 'skip', reason: 'too-long' }
         // The reader meets this once, then picks a model from the block itself.
@@ -443,10 +498,11 @@ export function apply(ctx, config) {
     // has: sending only the change would silently drop the rest. The list is
     // applied to the row as it is now, so two saves in a row both count.
     await editor.edit(entry, (current) => {
-      const before = { ...DEFAULTS, ...patch, ...current }
+      const before = { ...DEFAULTS, ...current }
+      const had = Array.isArray(before.sessions) ? before.sessions : []
       let list
       if (lists !== undefined) {
-        list = lists.sessions ?? (Array.isArray(before.sessions) ? before.sessions : [])
+        list = lists.sessions ?? had
         if (lists.addSessions !== undefined) list = [...list, ...lists.addSessions]
         if (lists.removeSessions !== undefined) list = list.filter((id) => !lists.removeSessions.includes(id))
         // The newest entries are kept when the list overflows.
@@ -454,6 +510,15 @@ export function apply(ctx, config) {
       }
       kept = { ...current, ...next }
       if (list !== undefined) kept.sessions = list
+      // Turning automation on, or widening it to another Session, starts its
+      // clock now: only answers committed from here on are rewritten unasked.
+      // Decided against the row as it is now, so back-to-back saves agree.
+      if (next.mode !== undefined || list !== undefined) {
+        const wasMode = MODES.includes(before.mode) ? before.mode : DEFAULTS.mode
+        const nowMode = MODES.includes(kept.mode) ? kept.mode : DEFAULTS.mode
+        const widened = list !== undefined && list.some((id) => !had.includes(id))
+        if (nowMode !== 'manual' && (nowMode !== wasMode || widened)) kept.autoSince = Date.now()
+      }
       return kept
     })
     return kept

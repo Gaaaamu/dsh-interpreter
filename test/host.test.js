@@ -10,12 +10,25 @@ import { apply, inject } from '../index.js'
 const LONG = 'x'.repeat(600)
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
+/** The fields index.js declares `.volatile()` in its Config. */
+const LIVE_FIELDS = ['provider', 'model', 'mode', 'sessions', 'autoSince']
+
+/** The marker and writer of DSH's live config references (cosmokit's shared protocol). */
+const WRITE = Symbol.for('cosmokit.volatile.write')
+
+/** A live reference shaped like the ones DSH hands a plugin. */
+function liveRef(value) {
+  let current = value
+  return { get: () => current, [WRITE]: (next) => { current = next } }
+}
+
 /**
  * One Host against stand-in DSH services. A save rewrites the plugin's config
  * row and restarts it, exactly as the Host does, so the next request meets the
  * config the save left behind.
  * @param model - `async function* (request, call)`: what the model streams back.
- * @param options - `rejection`: what the Host's own request check answers.
+ * @param options - `rejection`: what the Host's own request check answers;
+ *   `live`: hand the plugin live references, as DSH does when its Config loads.
  */
 async function host(model, options = {}) {
   const log = { events: {}, nodes: [] }
@@ -25,7 +38,7 @@ async function host(model, options = {}) {
     deriveEventMessage: (event) => ({ content: [{ type: 'text', text: event.text }] }),
   }
   const routes = {}
-  const state = { calls: 0, active: 0, peak: 0, saves: 0, models: [] }
+  const state = { calls: 0, active: 0, peak: 0, saves: 0, restarts: 0, models: [] }
   const row = { options: { config: { provider: 'p', model: 'm' } } }
 
   /** Stand-in services every plugin instance shares. */
@@ -58,7 +71,11 @@ async function host(model, options = {}) {
     },
   }
 
-  /** One plugin instance: its own effects, disposed together on restart. */
+  /**
+   * One plugin instance: its own effects, disposed together on restart. With
+   * `options.live`, the fields the plugin declares `.volatile()` reach it as
+   * references, as DSH hands them over; otherwise as plain values.
+   */
   const start = (config) => {
     const disposers = []
     const ctx = {
@@ -68,25 +85,43 @@ async function host(model, options = {}) {
         if (typeof dispose === 'function') disposers.push(dispose)
       },
     }
-    apply(ctx, config)
-    return { dispose: () => { for (const dispose of disposers.splice(0)) dispose() } }
+    const refs = {}
+    const parsed = { ...config }
+    if (options.live) {
+      for (const key of LIVE_FIELDS) {
+        refs[key] = liveRef(config[key])
+        parsed[key] = refs[key]
+      }
+    }
+    apply(ctx, parsed)
+    return { refs, dispose: () => { for (const dispose of disposers.splice(0)) dispose() } }
   }
 
   /**
-   * Like the Host's config editor: saves run one at a time, each re-reads the
-   * row as it is now, replaces its config wholesale, then reloads the plugin.
-   * The old instance's routes are gone for a moment before the new ones exist.
+   * Like the Host's config editor: saves run one at a time and each re-reads the
+   * row as it is now and replaces its config wholesale. A save that changes only
+   * live fields updates them in place; any other change reloads the plugin, and
+   * the old instance's routes are gone for a moment before the new ones exist.
    */
   let queue = Promise.resolve()
   const editor = {
     edit(entry, change) {
       const run = queue.then(async () => {
         await sleep(3)
-        entry.options.config = change(structuredClone(entry.options.config ?? {}), {})
+        const before = entry.options.config ?? {}
+        const next = change(structuredClone(before), {})
+        entry.options.config = next
         state.saves += 1
+        const changed = Object.keys({ ...before, ...next })
+          .filter((key) => JSON.stringify(before[key]) !== JSON.stringify(next[key]))
+        if (options.live && changed.every((key) => LIVE_FIELDS.includes(key))) {
+          for (const key of changed) instance.refs[key][WRITE](next[key])
+          return
+        }
+        state.restarts += 1
         instance.dispose()
         await sleep(2)
-        instance = start(entry.options.config)
+        instance = start(next)
       })
       queue = run.catch(() => {})
       return run
@@ -263,7 +298,7 @@ test('a stream that ends any way but stop is a failure', async () => {
   await h.cleanup()
 })
 
-test('a save restarts the plugin: the cache starts empty and the new model is used', async () => {
+test('without a Config schema a save restarts the plugin: empty cache, new model', async () => {
   const h = await host(answers((call) => `draft ${call}`))
   h.setLog([answer()])
   assert.equal((await h.rewrite({ sessionId: 's', seq: 1 }).done).text, 'draft 1')
@@ -306,5 +341,61 @@ test('bad config bodies are refused', async () => {
   assert.equal((await h.config({ addSessions: [1] }).done).status, 'error')
   assert.equal((await h.config({ provider: 'p', model: 'nope' }).done).status, 'error')
   assert.equal((await h.config({}).done).status, 'error')
+  await h.cleanup()
+})
+
+test('a live save keeps the plugin running, and each model keeps its own cache', async () => {
+  const h = await host(answers((call) => `draft ${call}`), { live: true })
+  h.setLog([answer()])
+  assert.equal((await h.rewrite({ sessionId: 's', seq: 1 }).done).text, 'draft 1')
+  assert.equal((await h.config({ provider: 'p', model: 'm2' }).done).status, 'ok')
+  assert.equal(h.state.restarts, 0)
+  assert.equal((await h.rewrite({ sessionId: 's', seq: 1 }).done).text, 'draft 2')
+  // Back to the first model: its answer is still remembered, nothing is paid twice.
+  await h.config({ provider: 'p', model: 'm' }).done
+  assert.equal((await h.rewrite({ sessionId: 's', seq: 1 }).done).text, 'draft 1')
+  assert.deepEqual(h.state.models, ['m', 'm2'])
+  const models = await h.send('/interpreter/models', undefined, 'GET').done
+  assert.equal(models.model, 'm')
+  await h.cleanup()
+})
+
+test('a rewrite in flight survives a live save', async () => {
+  const h = await host(answers('ok', 60), { live: true })
+  h.setLog([answer()])
+  const pending = h.rewrite({ sessionId: 's', seq: 1 })
+  await sleep(10)
+  await h.config({ mode: 'session', addSessions: ['s'] }).done
+  assert.equal((await pending.done).status, 'ok')
+  assert.equal(h.state.restarts, 0)
+  await h.cleanup()
+})
+
+test('switching automation on live starts its clock at the switch', async () => {
+  const h = await host(answers('ok'), { live: true })
+  // Written while the plugin ran, but before automation was switched on.
+  h.setLog([answer(Date.now())])
+  await sleep(5)
+  await h.config({ mode: 'global' }).done
+  assert.equal(h.state.restarts, 0)
+  assert.equal((await h.rewrite({ sessionId: 'a', seq: 1, auto: true }).done).reason, 'history')
+  h.setLog([answer(Date.now() + 1000)])
+  assert.equal((await h.rewrite({ sessionId: 'b', seq: 1, auto: true }).done).status, 'ok')
+  const gate = await h.send('/interpreter/config', undefined, 'GET').done
+  assert.equal(gate.mode, 'global')
+  await h.cleanup()
+})
+
+test('a live allow-list change merges with the row as it is now', async () => {
+  const h = await host(answers('ok'), { live: true })
+  await Promise.all([
+    h.config({ mode: 'session', addSessions: ['A'] }).done,
+    h.config({ mode: 'session', addSessions: ['B'] }).done,
+  ])
+  const removed = await h.config({ removeSessions: ['A'] }).done
+  assert.deepEqual(removed.sessions, ['B'])
+  const gate = await h.send('/interpreter/config', undefined, 'GET').done
+  assert.deepEqual(gate.sessions, ['B'])
+  assert.equal(h.state.restarts, 0)
   await h.cleanup()
 })
