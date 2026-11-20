@@ -482,10 +482,23 @@ window.__ModuleLoader__.load({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ sessionId, seq, force, auto }),
-      }).then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      });
+      }).then(readReply);
+    }
+
+    /**
+     * The JSON a route answered with, or an error a reader can act on. The Host
+     * refuses unauthenticated requests with an empty 401/403, which has no JSON
+     * to read; other failures carry their own message.
+     * @param response - the fetch response.
+     */
+    function readReply(response) {
+      if (response.ok) return response.json();
+      if (response.status === 401) throw new Error('登录已失效，刷新页面再试');
+      if (response.status === 403) throw new Error('请求被拒绝：页面来源不受信任，刷新页面再试');
+      return response.json().then(
+        (body) => { throw new Error(body?.message ?? `HTTP ${response.status}`); },
+        () => { throw new Error(`HTTP ${response.status}`); },
+      );
     }
 
     /** Provider errors are too technical to show as-is. */
@@ -497,10 +510,7 @@ window.__ModuleLoader__.load({
 
     /** Read the selectable models and the one in force. */
     function requestModels() {
-      return fetch(MODELS).then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      });
+      return fetch(MODELS).then(readReply);
     }
 
     /** Remember a new rewrite model. */
@@ -509,15 +519,12 @@ window.__ModuleLoader__.load({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ provider, model }),
-      }).then((response) => response.json());
+      }).then(readReply);
     }
 
     /** Ask the Host when a new answer should get a block. */
     function requestGate() {
-      return fetch(CONFIG).then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      });
+      return fetch(CONFIG).then(readReply);
     }
 
     /**
@@ -531,7 +538,7 @@ window.__ModuleLoader__.load({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(change),
-      }).then((response) => response.json());
+      }).then(readReply);
     }
 
     /**
@@ -807,12 +814,14 @@ window.__ModuleLoader__.load({
           local = { mode: 'manual', sessions: previous.sessions };
         }
         setSharedGate(local);
-        // Switching this Turn to an automatic mode fills in the block the reader is
-        // looking at; earlier Turns keep whatever they already had.
-        if (!started && pick !== 'manual') setWanted(true);
         saveGate(change)
           .then((result) => {
             if (result.status !== 'ok') throw new Error(result.message ?? '没保存上');
+            // Switching this Turn to an automatic mode fills in the block the reader
+            // is looking at; earlier Turns keep whatever they already had. Only once
+            // the save is through: saving restarts the Host half, and a rewrite sent
+            // alongside it would land on the instance being torn down.
+            if (!started && pick !== 'manual') setWanted(true);
             // The Host answers with the whole gate, other blocks' changes included.
             if (typeof result.mode === 'string' && Array.isArray(result.sessions)) {
               setSharedGate({ mode: result.mode, sessions: result.sessions });
@@ -1009,7 +1018,7 @@ window.__ModuleLoader__.load({
 
     // The test suite reaches the pure helpers through this hook; the app never sets it.
     if (typeof window.__DSH_INTERPRETER_TEST__ === 'function') {
-      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, renderBlock });
+      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, renderBlock, readReply });
     }
 
     return {

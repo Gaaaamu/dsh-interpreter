@@ -25,29 +25,28 @@ async function host(model, options = {}) {
     deriveEventMessage: (event) => ({ content: [{ type: 'text', text: event.text }] }),
   }
   const routes = {}
-  const state = { calls: 0, active: 0, peak: 0, saves: 0 }
+  const state = { calls: 0, active: 0, peak: 0, saves: 0, models: [] }
   const row = { options: { config: { provider: 'p', model: 'm' } } }
-  const editor = {
-    /** Replace the row's config wholesale, then restart the plugin. */
-    async edit(entry, change) {
-      const current = structuredClone(entry.options.config ?? {})
-      entry.options.config = change(current, {})
-      state.saves += 1
-      apply(ctx, entry.options.config)
-    },
-  }
-  const ctx = {
+
+  /** Stand-in services every plugin instance shares. */
+  const services = {
     connection: { requestRejection: () => options.rejection },
     fiber: { entry: row },
     get: (name) => (name === 'configEditor' ? editor : undefined),
-    effect: (install) => install(),
-    webServer: { register: (route) => { routes[route.path] = route.handler } },
+    webServer: {
+      /** Like the Host's registry: the returned disposer takes the route away again. */
+      register: (route) => {
+        routes[route.path] = route.handler
+        return () => { if (routes[route.path] === route.handler) delete routes[route.path] }
+      },
+    },
     sessions: { get: () => session },
     llm: {
       listProviders: () => [{ id: 'p' }],
       listModels: async () => [{ id: 'm' }, { id: 'm2' }],
       async *stream(request) {
         state.calls += 1
+        state.models.push(request.model)
         state.active += 1
         state.peak = Math.max(state.peak, state.active)
         try {
@@ -58,7 +57,43 @@ async function host(model, options = {}) {
       },
     },
   }
-  apply(ctx, row.options.config)
+
+  /** One plugin instance: its own effects, disposed together on restart. */
+  const start = (config) => {
+    const disposers = []
+    const ctx = {
+      ...services,
+      effect: (install) => {
+        const dispose = install()
+        if (typeof dispose === 'function') disposers.push(dispose)
+      },
+    }
+    apply(ctx, config)
+    return { dispose: () => { for (const dispose of disposers.splice(0)) dispose() } }
+  }
+
+  /**
+   * Like the Host's config editor: saves run one at a time, each re-reads the
+   * row as it is now, replaces its config wholesale, then reloads the plugin.
+   * The old instance's routes are gone for a moment before the new ones exist.
+   */
+  let queue = Promise.resolve()
+  const editor = {
+    edit(entry, change) {
+      const run = queue.then(async () => {
+        await sleep(3)
+        entry.options.config = change(structuredClone(entry.options.config ?? {}), {})
+        state.saves += 1
+        instance.dispose()
+        await sleep(2)
+        instance = start(entry.options.config)
+      })
+      queue = run.catch(() => {})
+      return run
+    },
+  }
+
+  let instance = start(row.options.config)
 
   /** Replace the Session log; events are numbered from 1. */
   const setLog = (events) => {
@@ -82,13 +117,20 @@ async function host(model, options = {}) {
         resolve(typeof text === 'string' ? JSON.parse(text) : { status: res.statusCode })
       }
     })
-    routes[path](req, res)
+    const handler = routes[path]
+    // Between one instance and the next nothing answers, as on the real server.
+    if (handler === undefined) {
+      res.statusCode = 404
+      res.end()
+      return { done, res }
+    }
+    handler(req, res)
     setImmediate(() => { req.emit('data', Buffer.from(JSON.stringify(body ?? {}))); req.emit('end') })
     return { done, res }
   }
   const rewrite = (body) => send('/interpreter/rewrite', body)
   const config = (body) => send('/interpreter/config', body)
-  return { state, setLog, rewrite, config, cleanup: async () => {} }
+  return { state, setLog, send, rewrite, config, cleanup: async () => {} }
 }
 
 /** A model that answers `text`, optionally after `delay` ms, honouring aborts. */
@@ -221,14 +263,26 @@ test('a stream that ends any way but stop is a failure', async () => {
   await h.cleanup()
 })
 
-test('a model switch mid-rewrite keeps the stale result out of the cache', async () => {
-  const h = await host(answers((call) => `draft ${call}`, 40))
+test('a save restarts the plugin: the cache starts empty and the new model is used', async () => {
+  const h = await host(answers((call) => `draft ${call}`))
   h.setLog([answer()])
-  const stale = h.rewrite({ sessionId: 's', seq: 1 })
-  await sleep(10)
-  await h.config({ provider: 'p', model: 'm2' }).done
-  await stale.done
+  assert.equal((await h.rewrite({ sessionId: 's', seq: 1 }).done).text, 'draft 1')
+  assert.equal((await h.rewrite({ sessionId: 's', seq: 1 }).done).text, 'draft 1')
+  assert.equal(h.state.calls, 1)
+  const saved = await h.config({ provider: 'p', model: 'm2' }).done
+  assert.equal(saved.status, 'ok')
+  // The save answers only after the reload, so the next request meets the new instance.
   assert.equal((await h.rewrite({ sessionId: 's', seq: 1 }).done).text, 'draft 2')
+  assert.deepEqual(h.state.models, ['m', 'm2'])
+  await h.cleanup()
+})
+
+test('the config row keeps the fields a save did not touch', async () => {
+  const h = await host(answers('ok'))
+  await h.config({ mode: 'global' }).done
+  await h.config({ provider: 'p', model: 'm2' }).done
+  const gate = await h.send('/interpreter/config', undefined, 'GET').done
+  assert.equal(gate.mode, 'global')
   await h.cleanup()
 })
 

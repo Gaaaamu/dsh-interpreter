@@ -46,11 +46,11 @@
 
 每条速览右上角有「模型」。点开是一张二级卡片，悬浮在按钮下方，列出当前所有能用的 provider / model，当前那个加粗；点一下就是选中，卡片自己收起，这一条立刻用新模型重做，以后都按新的来。不占原位，所以头一行的宽度不会变。
 
-选择存进当前 profile 的配置行：`cordis.patch.yml` 里 `- id: interpreter` 的 `config`。插件不自己维护配置文件，存盘走 DSH 的配置接口（`ctx.fiber.entry` + `configEditor`），所以和别的设置一样由 DSH 校验、写入。删掉这一行里的 `config` 就回到内置默认。
+选择存进**当前 profile 目录下**的 `cordis.patch.yml`：其中 `- id: interpreter` 那一行的 `config`。插件包里那份同名文件只是安装时的初始值；界面第一次保存后，profile 里这一行会带上完整的 `config` 并整份替代它，之后调参请改 profile 目录下的那份。插件不自己维护配置文件，存盘走 DSH 的配置接口（`ctx.fiber.entry` + `configEditor`），所以和别的设置一样由 DSH 校验、写入。删掉这一行里的 `config` 就回到内置默认。
 
 ### 其他参数：改 YAML
 
-`cordis.patch.yml` 里 `- id: interpreter` 的 `config`：
+当前 profile 目录下 `cordis.patch.yml` 里 `- id: interpreter` 的 `config`：
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |

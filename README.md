@@ -36,7 +36,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 #### 2. 首次配置与运行模式
 插件安装后默认处于**手动模式**，不会自动触发调用产生费用：
 1. 点击回答下方的「› 速览」展开区块，在右上角「模型」下拉菜单中选择当前环境中可用的 `provider / model`。
-2. 根据使用习惯切换运行模式（选择存进当前 Profile 的配置行，即 `cordis.patch.yml` 里 `- id: interpreter` 的 `config`，由界面经 DSH 的配置接口写回）：
+2. 根据使用习惯切换运行模式（选择存进**当前 Profile 目录下**的 `cordis.patch.yml`，即其中 `- id: interpreter` 那一行的 `config`，由界面经 DSH 的配置接口写回；每次保存插件会重新加载一次）：
 
 | 模式 | 行为说明 |
 | :--- | :--- |
@@ -48,7 +48,10 @@ Generates an independent "Condensed View" summary block below each DSH response,
 
 ### 参数配置
 
-可在 `cordis.patch.yml` 的 `- id: interpreter` 下通过 `config` 字段调整参数（优先级：内置默认 < 该行 `config`；界面上的选择也写回这一行）：
+在**当前 Profile 目录下**的 `cordis.patch.yml` 里，通过 `- id: interpreter` 那一行的 `config` 字段调整参数（优先级：内置默认 < 该行 `config`；界面上的选择也写回这一行）。
+
+> 注意：插件包里也有一个同名的 `cordis.patch.yml`，那只是安装时的初始值。界面第一次保存后，Profile 里的这一行会带上完整的 `config`（包括当时的 `minChars` 等），从此整份替代插件包里的初始值；之后要调参，请改 Profile 目录下的那份。
+
 
 | 参数 | 默认值 | 说明 |
 | :--- | :--- | :--- |
@@ -116,7 +119,7 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 #### 2. Initial Setup & Modes
 The plugin defaults to **Manual** mode so no calls are made automatically upon installation:
 1. Click "› 速览" below a response and open the "模型" (Model) menu to select an available `provider / model` exposed by `ctx.llm`.
-2. Switch modes as needed (the choice lives in the profile's config row, `config` of `- id: interpreter` in `cordis.patch.yml`, written back by the UI through DSH's config API):
+2. Switch modes as needed (the choice lives in **the profile directory's** `cordis.patch.yml`, in the `config` of its `- id: interpreter` row, written back by the UI through DSH's config API; each save reloads the plugin once):
 
 | Mode | Behavior |
 | :--- | :--- |
@@ -128,7 +131,10 @@ Automatic modes only cover answers written **after** they were switched on: open
 
 ### Configuration
 
-Parameters can be tuned under `config` of `- id: interpreter` in `cordis.patch.yml` (precedence: built-in defaults < that row's `config`; UI choices are written back to the same row):
+Parameters can be tuned in **the profile directory's** `cordis.patch.yml`, under `config` of its `- id: interpreter` row (precedence: built-in defaults < that row's `config`; UI choices are written back to the same row).
+
+> Note: the plugin package ships its own `cordis.patch.yml`; that file only seeds the first install. After the first save from the UI, the profile row carries the complete `config` (including the `minChars` and other values in force at the time) and replaces the package's values entirely, so tune the profile directory's copy from then on.
+
 
 | Key | Default | Description |
 | :--- | :--- | :--- |

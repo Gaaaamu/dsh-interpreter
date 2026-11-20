@@ -175,8 +175,6 @@ export function apply(ctx, config) {
 
   /** Rewrite results, including the decisions not to rewrite. */
   const cache = new Map()
-  /** Bumped whenever the cache is emptied, so work started before cannot refill it. */
-  let cacheGeneration = 0
   /** Rewrites already running, so a second request joins instead of paying twice. */
   const running = new Map()
 
@@ -331,7 +329,6 @@ export function apply(ctx, config) {
         return { status: 'skip', reason: 'history' }
       }
     }
-    const generation = cacheGeneration
     const controller = new AbortController()
     const work = (async () => {
       const shared = controller.signal
@@ -356,8 +353,9 @@ export function apply(ctx, config) {
     running.set(key, entry)
     work.then((result) => {
       if (running.get(key) === entry) running.delete(key)
-      // A model switch while this ran makes its answer stale before it lands.
-      if (result.status !== 'error' && generation === cacheGeneration) remember(key, result)
+      // A save restarts the plugin, so a model switch never meets this cache:
+      // the new instance starts empty and this one is gone with its results.
+      if (result.status !== 'error') remember(key, result)
     })
     return attend(entry, signal)
   }
