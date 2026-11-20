@@ -115,7 +115,12 @@ const VOLATILE = Symbol.for('cosmokit.volatile.write')
  * @param value - one field of the row's config.
  */
 function read(value) {
-  return value !== null && typeof value === 'object' && VOLATILE in value ? value.get() : value
+  return isLive(value) ? value.get() : value
+}
+
+/** Whether one config field is a live reference handed over by DSH. */
+function isLive(value) {
+  return value !== null && typeof value === 'object' && VOLATILE in value
 }
 
 /**
@@ -210,6 +215,14 @@ export function apply(ctx, config) {
     }
     return out
   }
+
+  /**
+   * Whether saves update this plugin in place. True only when the Config
+   * schema loaded and DSH handed the saved fields over as live references;
+   * false means every save restarts the plugin. Reported to the page so the
+   * difference can be checked in a running Host.
+   */
+  const live = isLive(config?.provider)
 
   /** Answers committed before this moment were not written while the bundle ran. */
   const startedAt = Date.now()
@@ -556,6 +569,7 @@ export function apply(ctx, config) {
           status: 'ok',
           mode: MODES.includes(options.mode) ? options.mode : DEFAULTS.mode,
           sessions: Array.isArray(options.sessions) ? options.sessions.filter((id) => typeof id === 'string') : [],
+          live,
         })
         return
       }

@@ -399,3 +399,13 @@ test('a live allow-list change merges with the row as it is now', async () => {
   assert.equal(h.state.restarts, 0)
   await h.cleanup()
 })
+
+test('the gate reports whether saves update the plugin in place', async () => {
+  const plain = await host(answers('ok'))
+  assert.equal((await plain.send('/interpreter/config', undefined, 'GET').done).live, false)
+  const live = await host(answers('ok'), { live: true })
+  assert.equal((await live.send('/interpreter/config', undefined, 'GET').done).live, true)
+  // A live save keeps the plugin, so the report does not change under it.
+  await live.config({ mode: 'global' }).done
+  assert.equal((await live.send('/interpreter/config', undefined, 'GET').done).live, true)
+})
