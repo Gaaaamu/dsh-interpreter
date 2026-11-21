@@ -23,7 +23,7 @@ globalThis.window = {
   __DSH_INTERPRETER_TEST__: (exposed) => { helpers = exposed },
 }
 new Function(source)()
-const { blocks, inline, safeHref, tableCells, effectiveMode, renderBlock, readReply, headline } = helpers
+const { blocks, inline, safeHref, tableCells, effectiveMode, renderBlock, readReply, headline, probeTurn } = helpers
 
 /** The href of every link in an inline run, or the text where a node is text. */
 const hrefs = (text) => inline(text, 'k').map((node) => (typeof node === 'string' ? node : node.props.href ?? node.type))
@@ -124,4 +124,41 @@ test('refused and failed replies turn into messages a reader can act on', async 
   assert.throws(() => readReply(reply(403)), /请求被拒绝/)
   await assert.rejects(readReply(reply(400, { status: 'error', message: 'that model is not available right now' })), /not available/)
   await assert.rejects(readReply(reply(500)), /HTTP 500/)
+})
+
+test('a Turn is asked about once, and only a settled answer is remembered', async () => {
+  const asked = []
+  const original = globalThis.fetch
+  let answer
+  globalThis.fetch = async (path, init) => {
+    asked.push({ path, body: JSON.parse(init.body) })
+    return { ok: true, status: 200, json: async () => answer }
+  }
+  try {
+    answer = { status: 'ok' }
+    assert.equal(await probeTurn('s', 1), true)
+    assert.equal(await probeTurn('s', 1), true)
+    assert.equal(asked.length, 1)
+    assert.equal(asked[0].path, '/interpreter/probe')
+    assert.deepEqual(asked[0].body, { sessionId: 's', seq: 1 })
+
+    // A short answer stays hidden, and stays remembered as hidden.
+    answer = { status: 'skip', reason: 'too-short' }
+    assert.equal(await probeTurn('s', 2), false)
+    assert.equal(await probeTurn('s', 2), false)
+    assert.equal(asked.length, 2)
+
+    // An answer that has not landed yet may land later: ask again next mount.
+    answer = { status: 'skip', reason: 'no-answer' }
+    assert.equal(await probeTurn('s', 3), false)
+    assert.equal(await probeTurn('s', 3), false)
+    assert.equal(asked.length, 4)
+
+    // A failed read is not a judgment: never remembered as hidden.
+    globalThis.fetch = async () => { throw new Error('offline') }
+    await assert.rejects(probeTurn('s', 4), /offline/)
+    await assert.rejects(probeTurn('s', 4), /offline/)
+  } finally {
+    globalThis.fetch = original
+  }
 })

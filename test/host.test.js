@@ -165,7 +165,8 @@ async function host(model, options = {}) {
   }
   const rewrite = (body) => send('/interpreter/rewrite', body)
   const config = (body) => send('/interpreter/config', body)
-  return { state, setLog, send, rewrite, config, cleanup: async () => {} }
+  const probe = (body) => send('/interpreter/probe', body)
+  return { state, setLog, send, rewrite, config, probe, cleanup: async () => {} }
 }
 
 /** A model that answers `text`, optionally after `delay` ms, honouring aborts. */
@@ -195,6 +196,7 @@ test('a request the Host refuses is answered before its body is read', async () 
   assert.equal(refused.status, 401)
   assert.equal(h.state.calls, 0)
   assert.equal((await h.config({ mode: 'global' }).done).status, 401)
+  assert.equal((await h.probe({ sessionId: 's', seq: 1 }).done).status, 401)
 })
 
 test('an answer the reader stopped is not rewritten unasked', async () => {
@@ -443,4 +445,35 @@ test('the gate reports whether saves update the plugin in place', async () => {
   // A live save keeps the plugin, so the report does not change under it.
   await live.config({ mode: 'global' }).done
   assert.equal((await live.send('/interpreter/config', undefined, 'GET').done).live, true)
+})
+
+test('the entry is offered only where a click has something to do', async () => {
+  const h = await host(answers('ok'))
+  h.setLog([
+    answer(Date.now() - 3600e3),
+    // 短回答压在手里，改写也只会回一句「这条没什么可压的」。
+    { ...answer(), text: 'x'.repeat(50) },
+    { ...answer(), text: 'x'.repeat(40001) },
+    { type: 'tool/call', data: { turn: 2 }, time: Date.now() },
+  ])
+  // A long answer gets an entry, even one written before automation was on:
+  // in 手动 the entry is the only way to ask, so the probe must not age it out.
+  assert.deepEqual(await h.probe({ sessionId: 's', seq: 1 }).done, { status: 'ok' })
+  assert.deepEqual(await h.probe({ sessionId: 's', seq: 2 }).done, { status: 'skip', reason: 'too-short' })
+  assert.deepEqual(await h.probe({ sessionId: 's', seq: 3 }).done, { status: 'skip', reason: 'too-long' })
+  assert.deepEqual(await h.probe({ sessionId: 's', seq: 4 }).done, { status: 'skip', reason: 'no-answer' })
+  // Judging an entry costs nothing: no model is asked, and no rewrite is cached.
+  assert.equal(h.state.calls, 0)
+  await h.cleanup()
+})
+
+test('the entry probe reads no body it cannot use', async () => {
+  const h = await host(answers('ok'))
+  assert.deepEqual(await h.send('/interpreter/probe', undefined, 'GET').done, { status: 'error', message: 'POST only' })
+  const bad = (body) => h.probe(body).done
+  for (const body of [{ sessionId: 's' }, { seq: 1 }, { sessionId: 's', seq: '1' }, { sessionId: 1, seq: 2 }]) {
+    assert.deepEqual(await bad(body), { status: 'error', message: 'sessionId and seq are required' }, JSON.stringify(body))
+  }
+  assert.equal(h.state.calls, 0)
+  await h.cleanup()
 })

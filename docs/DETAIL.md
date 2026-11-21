@@ -15,12 +15,12 @@
 ## 什么时候会出现
 
 - 回答要有正文，且不比 `minChars` 短（默认 400 字）。
-- 纯工具轮次、没有正文的轮次不出现。
+- 纯工具轮次、没有正文的轮次，以及短于 `minChars`、长于 `maxChars` 的回答，连「› 速览」这一行都不出现：点了也只会回一句「这条没什么可压的」，不如别放。判定由 Host 侧做（`POST /interpreter/probe`），一次本地请求、不调模型、不进缓存。
 - 超过 `maxChars`（默认 40000 字）会跳过，只提示一句，不发模型请求。
 - 还要看此刻的模式：`全部` 每条都做，`本会话` 只做打开过自动的会话，`手动` 一条都不做，等你去点。模式按「当前会话」显示：本会话模式下，不在白名单里的会话显示为 `手动`；在白名单里的会话点 `手动`，只把它自己移出白名单。
 - 自动模式只管打开之后（以及这次启动 DSH 之后）新写出来的回答。翻开旧会话时，以前的回答一律是收起的一行「› 速览」，点了才生成，不会补跑整段历史。同一时间最多 2 个改写在跑。
 - 链接只认网页（`http` / `https`）、`file:`、`mailto:` 和本地路径；`javascript:`、`data:` 这类地址只留文字、不做成链接。
-- 默认是 `手动`：装上之后每条回答下面只有一行「› 速览」，点一下才生成，不会自己花钱。用顺手了在那一行右边切成 `全部`。
+- 默认是 `手动`：装上之后，够长的回答下面只有一行「› 速览」，点一下才生成，不会自己花钱。用顺手了在那一行右边切成 `全部`。
 
 ## 第一次用
 
@@ -32,7 +32,7 @@
 
 左边是一个「› 速览」的折线小三角，点它收起或展开这块内容。字体照着回答顶上那行「已完成，用时 5 分 36 秒」来：15px、常规字重、次级色，折线图标的中线和文字中线对齐。整块放在浅一层的卡片背景上，和上面的原文分开。
 
-收起的时候只留这一行「› 速览 · 结论句」：结论句是速览的第一句话，去掉 Markdown 记号后取到第一个句号，太长就截断加省略号（悬停能看到完整那一句）。模式、模型、花费、刷新图标都跟着正文一起收起来 —— 收起就是收起。手动模式下每条回答都是收起的，点一下那行才去生成；还没生成过的回答只有「› 速览」，没有结论可带。
+收起的时候只留这一行「› 速览 · 结论句」：结论句是速览的第一句话，去掉 Markdown 记号后取到第一个句号，太长就截断加省略号（悬停能看到完整那一句）。模式、模型、花费、刷新图标都跟着正文一起收起来 —— 收起就是收起。手动模式下，够长的回答都是收起的，点一下那行才去生成；还没生成过的回答只有「› 速览」，没有结论可带。判定还没回来的时候这一行先不画，所以不会闪一下又消失。
 
 展开后，右边是「全部 / 本会话 / 手动」换模式、「模型」换改写用的模型，两个都是纯文字按钮，不再带三角。底下靠右是一行小字和一个小图标：`2.5k tokens` 是这一条改写实际花掉的 token（鼠标停上去能看到输入 / 输出 / 合计），旁边那个环形箭头丢掉缓存重做这一条。
 
@@ -71,12 +71,13 @@
 
 ## 实现
 
-- Host 半边注册三个路由：
+- Host 半边注册四个路由：
   - `POST /interpreter/rewrite`：从 Session 日志里取出这一轮落盘的 assistant 正文，调用 `ctx.llm.stream` 改写，结果按「会话 + 序号」缓存。每次调用的 `usage` 块会被收下来，压成 `{inputTokens, outputTokens, totalTokens}` 一并返回；压了两遍就把两次相加，因为那是两次真实计费。
+  - `POST /interpreter/probe`：只回答「这一轮值不值得有一条入口」——`ok`，或 `too-short` / `too-long` / `no-answer`。读的是改写路由本来就要读的那段日志，不调模型、不进缓存，页面里同一条轮次只问一次。它不看 `autoSince` 和历史：手动模式下入口是唯一的入口，旧回答也得能点。
   - `GET /interpreter/models`：列出 `ctx.llm.listProviders()` × `listModels()` 的可选组合，外加当前值。
   - `GET /interpreter/config`：返回当前的 `mode`、`sessions`，以及 `live`。`live: true` 表示 `Config` 已经声明成功、DSH 把保存的字段作为 live 引用交给了插件，保存时就地生效；`live: false` 表示没加载到 schema 库，每次保存都会重启插件。在 DSH 的开发者工具控制台里运行 `await (await fetch('/interpreter/config')).json()` 就能看到。
-  - `POST /interpreter/config`：校验 provider/model 确实在清单里，再经 DSH 的配置接口写进本 profile `- id: interpreter` 那一行。插件导出的 `Config` 把 `provider`、`model`、`mode`、`sessions`、`autoSince` 声明为 `.volatile()`（live 字段），存盘时 DSH 就地更新它们、不重启插件，代码每次用时都用 `.get()` 读当前值；正在跑的改写、缓存、路由都不受影响。缓存键带上 provider/model，换模型后不会拿到旧模型的结果，切回旧模型时旧结果仍可用。`Config` 依赖 DSH 自带的 `@deepseek-ai/schemastery`，插件用动态 import 加载。DSH 只让插件解析它在 `package.json` 里声明过的包，所以这里把它声明成可选的 `peerDependencies`：不写这一行，import 会悄悄失败，插件退回重启模式（可以用 `GET /interpreter/config` 返回的 `live` 字段确认）。加载不到时不声明 `Config`，退回「存盘即重启插件」的行为，功能不变。白名单用 `addSessions` / `removeSessions` 增删，不再整份覆盖，多个块同时改也不会互相冲掉；回包带上完整的 `mode` 和 `sessions`。打开自动模式（或往白名单里加会话）时记下 `autoSince`；改写路由收到 `auto: true` 的请求时，落盘时间早于 `autoSince` 和本次启动时间的回答回 `skip: history`，被中断（`interrupted`）的回答回 `skip: interrupted`，都不调模型、不进缓存。三个路由先过 DSH 的连接校验（`ctx.connection.requestRejection`）：没通过的直接 401/403，body 都不读。
+  - `POST /interpreter/config`：校验 provider/model 确实在清单里，再经 DSH 的配置接口写进本 profile `- id: interpreter` 那一行。插件导出的 `Config` 把 `provider`、`model`、`mode`、`sessions`、`autoSince` 声明为 `.volatile()`（live 字段），存盘时 DSH 就地更新它们、不重启插件，代码每次用时都用 `.get()` 读当前值；正在跑的改写、缓存、路由都不受影响。缓存键带上 provider/model，换模型后不会拿到旧模型的结果，切回旧模型时旧结果仍可用。`Config` 依赖 DSH 自带的 `@deepseek-ai/schemastery`，插件用动态 import 加载。DSH 只让插件解析它在 `package.json` 里声明过的包，所以这里把它声明成可选的 `peerDependencies`：不写这一行，import 会悄悄失败，插件退回重启模式（可以用 `GET /interpreter/config` 返回的 `live` 字段确认）。加载不到时不声明 `Config`，退回「存盘即重启插件」的行为，功能不变。白名单用 `addSessions` / `removeSessions` 增删，不再整份覆盖，多个块同时改也不会互相冲掉；回包带上完整的 `mode` 和 `sessions`。打开自动模式（或往白名单里加会话）时记下 `autoSince`；改写路由收到 `auto: true` 的请求时，落盘时间早于 `autoSince` 和本次启动时间的回答回 `skip: history`，被中断（`interrupted`）的回答回 `skip: interrupted`，都不调模型、不进缓存。四个路由先过 DSH 的连接校验（`ctx.connection.requestRejection`）：没通过的直接 401/403，body 都不读。
   - 同一轮的多个请求共用一次改写；只有等它的请求全部离开才会中断，一个页面关掉不会连累另一个。第二遍压缩失败时保留第一版，不整条报错；模型流以 `stop` 以外的方式结束一律算失败，截断的半截不会当结果缓存。
   - 取正文只在这一轮里找（按事件的 `data.turn` 和 `turn/start` 划界），没有正文的轮次不会借上一轮的回答。
 - Client 半边往 `conversation.chat.turnTail` 塞一个块，挂载时请求改写路由，带「整理中（亮光 + 逐次变长的省略号） / 速览折叠三角 / 花费 / 重新整理 / 重试 / 模型二级卡片」；正文的排版和链接图标在这一半就地渲染，只用 DSH 的样式和主题变量，不引外部样式表。整页只插一份样式表（规则都挂在 `ra-` 前缀下），设置也整页只读一次、各块共用，改了模式其他块立刻跟着变。
-- 两个 POST 只回答 `application/json`，浏览器跨站请求过不了预检。
+- 三个 POST（改写、探针、配置）只回答 `application/json`，浏览器跨站请求过不了预检。

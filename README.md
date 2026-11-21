@@ -20,6 +20,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 * **旁路运行，零上下文侵入**：基于已落盘的回答发起独立调用，输出仅渲染于前端界面。不修改主模型的系统提示词与工具定义，不写入会话日志（Session Log），不影响长上下文与 Prefix 缓存。
 * **独立模型路由**：摘要生成可指定与主对话不同的模型（例如主对话使用强编码模型，摘要侧选用表达与概括能力更强的模型），互不干扰。
 * **原生样式融合**：排版、字号、代码块、表格与链接样式直接复用 DSH 主题变量，随宿主主题与字号设置同步变化；右下角实时显示本次摘要消耗的 Token 数量（悬停可查看输入 / 输出明细）。
+* **入口只在有用时出现**：短回答、纯工具轮次、没有正文的轮次不再显示「› 速览」，省得点开只看到一句「这条没什么可压的」；判定在 Host 侧做，一次本地请求、不调模型。
 
 ### 安装与使用
 
@@ -77,7 +78,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 npm test
 ```
 
-测试用 Node 自带的 `node:test`，不装任何依赖：Host 端用模拟的会话日志和模型流驱动三个路由，Client 端测链接过滤和 Markdown 解析。
+测试用 Node 自带的 `node:test`，不装任何依赖：Host 端用模拟的会话日志和模型流驱动四个路由，Client 端测链接过滤和 Markdown 解析。
 
 ### 迭代计划 (Roadmap)
 
@@ -90,9 +91,8 @@ npm test
 
 #### 中期：降低理解成本
 5. **模式分层**：全局默认模式移至设置页，块内只保留「本会话自动速览」开关，明确每个控件的作用范围。
-6. **按条件显示入口**：仅在符合长度条件的回答下显示「› 速览」，短回答与纯工具轮次不再显示入口。
-7. **首次引导**：未选模型时点击速览，直接弹出模型卡片并标注推荐项，选定后立即生成当前这一条。
-8. **可视化设置页**：在前端调整长度档位（简短 / 适中）、模型与提示词；`temperature`、`minChars`、`maxChars` 收入高级选项，无需修改 YAML。
+6. **首次引导**：未选模型时点击速览，直接弹出模型卡片并标注推荐项，选定后立即生成当前这一条。
+7. **可视化设置页**：在前端调整长度档位（简短 / 适中）、模型与提示词；`temperature`、`minChars`、`maxChars` 收入高级选项，无需修改 YAML。
 
 #### 后续：扩展价值
 9. **复制与引用**：一键复制速览，或引用到输入框继续追问（仅在用户主动操作时进入对话上下文）。
@@ -123,6 +123,7 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 * **Non-Intrusive Side-Channel Execution**: Reads the finalized response from the session log and renders the output only in the UI. It never alters the main model's system prompt or tool definitions, adds no events to the session log, and preserves main context and prefix caching.
 * **Independent Model Routing**: Use a dedicated model for summarization without affecting the main conversation's model selection.
 * **Native UI Integration**: Typography, inline-code chips, tables, and link styles inherit directly from DSH theme tokens. A token counter in the bottom-right corner reports the exact cost of each rewrite (hover for input / output / total breakdown).
+* **An Entry Only Where It Helps**: Short answers, tool-only turns, and turns without prose get no 「› 速览」 line, so clicking never lands on "nothing to condense"; the Host decides, with one local request and no model call.
 
 ### Installation & Usage
 
@@ -193,9 +194,8 @@ Listed by priority.
 
 #### Mid Term: Easier to Understand
 5. **Layered Modes**: Move the global default mode to the settings page and keep only an "auto-summarize this session" toggle in the block, so the scope of each control is clear.
-6. **Entry Only Where It Applies**: Show 「› 速览」 only under answers that meet the length threshold; short answers and tool-only turns get no entry.
-7. **First-Run Guidance**: When no model is selected, clicking the block opens the model card directly with recommended picks marked, then generates the current answer right after a pick.
-8. **Visual Settings Page**: Adjust a length level (brief / standard), the model, and the prompt in the UI; `temperature`, `minChars`, and `maxChars` move under advanced options, with no YAML editing required.
+6. **First-Run Guidance**: When no model is selected, clicking the block opens the model card directly with recommended picks marked, then generates the current answer right after a pick.
+7. **Visual Settings Page**: Adjust a length level (brief / standard), the model, and the prompt in the UI; `temperature`, `minChars`, and `maxChars` move under advanced options, with no YAML editing required.
 
 #### Later: More Value per Summary
 9. **Copy & Quote**: Copy the summary in one click, or quote it into the composer to follow up (it enters the conversation context only when you do this yourself).

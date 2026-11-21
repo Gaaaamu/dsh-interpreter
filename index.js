@@ -11,6 +11,9 @@
 /** Local route the Client module posts to. */
 const ROUTE_PATH = '/interpreter/rewrite'
 
+/** Local route that says whether a Turn is worth an entry, without a rewrite. */
+const PROBE_PATH = '/interpreter/probe'
+
 /** Local routes the page uses to read and change the rewrite model. */
 const MODELS_PATH = '/interpreter/models'
 const CONFIG_PATH = '/interpreter/config'
@@ -398,6 +401,21 @@ export function apply(ctx, config) {
     return { text: best.text, usage: mergeUsage(first.usage, second.usage) }
   }
 
+  /**
+   * Why an answer is not worth a 速览, if it is not: too short to be worth
+   * compacting, or too long to pay for. Both the rewrite and the entry probe
+   * answer from this one rule, so the entry never offers a click that would
+   * only come back empty.
+   * @param text - the answer's text.
+   * @param options - the settings in force.
+   * @returns the skip reason, or undefined when the answer would be rewritten.
+   */
+  function unfitBecause(text, options) {
+    if (text.length < options.minChars) return 'too-short'
+    if (text.length > options.maxChars) return 'too-long'
+    return undefined
+  }
+
   /** Resolve one request, sharing in-flight work and caching settled results. */
   async function resolve(sessionId, seq, force, auto, signal) {
     /** The settings this request runs with, taken once so the key and the call agree. */
@@ -430,8 +448,8 @@ export function apply(ctx, config) {
         const answer = answerAt(session, seq)
         if (answer === undefined) return { status: 'skip', reason: 'no-answer' }
         const text = answer.text
-        if (text.length < options.minChars) return { status: 'skip', reason: 'too-short' }
-        if (text.length > options.maxChars) return { status: 'skip', reason: 'too-long' }
+        const unfit = unfitBecause(text, options)
+        if (unfit !== undefined) return { status: 'skip', reason: unfit }
         // The reader meets this once, then picks a model from the block itself.
         if (options.provider === '' || options.model === '') return { status: 'error', message: 'no configured model' }
         const outcome = await limited(shared, () => rewrite(text, sessionId, options, shared))
@@ -449,6 +467,23 @@ export function apply(ctx, config) {
       if (result.status !== 'error') remember(key, result)
     })
     return attend(entry, signal)
+  }
+
+  /**
+   * Whether a Turn is worth an entry at all, answered without spending a
+   * rewrite. The entry only exists where a click has something to do, so a
+   * short answer or a Turn that answered no text never grows one.
+   * @param sessionId - the Session the Turn belongs to.
+   * @param seq - the Turn's closing sequence.
+   */
+  function entryOf(sessionId, seq) {
+    const session = ctx.sessions.get(sessionId)
+    if (session === undefined) return { status: 'skip', reason: 'no-answer' }
+    const answer = answerAt(session, seq)
+    if (answer === undefined) return { status: 'skip', reason: 'no-answer' }
+    const unfit = unfitBecause(answer.text, settings())
+    if (unfit !== undefined) return { status: 'skip', reason: unfit }
+    return { status: 'ok' }
   }
 
   /**
@@ -704,4 +739,40 @@ export function apply(ctx, config) {
       if (!res.writableEnded) reply(res, 200, result)
     },
   }), 'interpreter: rewrite route')
+
+  /**
+   * The page asks, per Turn, whether to offer the entry at all. Deliberately
+   * cheap: no model call and no cache, just the log read the rewrite would have
+   * done anyway, so a Session full of Turns costs nothing.
+   */
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: PROBE_PATH,
+    handler: async (req, res) => {
+      if (rejected(req, res)) return
+      if (req.method !== 'POST') {
+        reply(res, 405, { status: 'error', message: 'POST only' })
+        return
+      }
+      const type = String(req.headers['content-type'] ?? '')
+      if (!type.startsWith('application/json')) {
+        reply(res, 415, { status: 'error', message: 'application/json only' })
+        return
+      }
+      let body
+      try {
+        body = await readJsonBody(req)
+      } catch (error) {
+        reply(res, 400, { status: 'error', message: error instanceof Error ? error.message : String(error) })
+        return
+      }
+      const sessionId = body?.sessionId
+      const seq = body?.seq
+      if (typeof sessionId !== 'string' || !Number.isSafeInteger(seq)) {
+        reply(res, 400, { status: 'error', message: 'sessionId and seq are required' })
+        return
+      }
+      reply(res, 200, entryOf(sessionId, seq))
+    },
+  }), 'interpreter: probe route')
 }

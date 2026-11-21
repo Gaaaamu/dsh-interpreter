@@ -16,6 +16,8 @@ window.__ModuleLoader__.load({
     /** Host routes behind the model picker. */
     const MODELS = '/interpreter/models';
     const CONFIG = '/interpreter/config';
+    /** Host route that says whether a Turn is worth an entry, before anything is spent. */
+    const PROBE = '/interpreter/probe';
 
     /** Raised surface, same idiom as the tool-call cards above it. */
     const CARD = {
@@ -54,6 +56,8 @@ window.__ModuleLoader__.load({
     };
     /** Longest conclusion the folded line keeps before it is cut with an ellipsis. */
     const HEADLINE_CHARS = 36;
+    /** Turns whose judged entry is remembered; older ones are dropped past this. */
+    const MAX_PROBES = 500;
     const ACTION = {
       fontSize: 12, padding: 0, border: 0, cursor: 'pointer', background: 'transparent',
       color: 'var(--dsw-alias-label-secondary, inherit)',
@@ -526,6 +530,19 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Ask the Host whether one Turn is worth an entry at all. The entry is the
+     * whole block in 手动, so a Turn whose answer is too short — or answered no
+     * text — would otherwise grow a click that only says 「这条没什么可压的」.
+     */
+    function requestProbe(sessionId, seq) {
+      return fetch(PROBE, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId, seq }),
+      }).then(readReply);
+    }
+
+    /**
      * The JSON a route answered with, or an error a reader can act on. The Host
      * refuses unauthenticated requests with an empty 401/403, which has no JSON
      * to read; other failures carry their own message.
@@ -729,6 +746,29 @@ window.__ModuleLoader__.load({
       return gate;
     }
 
+    /**
+     * What the Host said about each Turn, shared by every block: switching
+     * Sessions remounts its Turns, and a committed answer never changes, so the
+     * same Turn is never asked about twice.
+     */
+    const probes = new Map();
+
+    /** Whether a click under this Turn would rewrite something. */
+    function probeTurn(sessionId, seq) {
+      const key = `${sessionId}:${seq}`;
+      const known = probes.get(key);
+      if (known !== undefined) return Promise.resolve(known);
+      return requestProbe(sessionId, seq).then((result) => {
+        // Only a settled answer is worth keeping: a Turn whose text has not
+        // landed yet, or a read that failed, gets asked about again next mount.
+        if (result.status === 'ok' || result.reason === 'too-short' || result.reason === 'too-long') {
+          if (probes.size >= MAX_PROBES) probes.clear();
+          probes.set(key, result.status === 'ok');
+        }
+        return result.status === 'ok';
+      });
+    }
+
     /** One 「速览」 block for the Turn the slot hands over. */
     function Interpreter(props) {
       const sessionId = props.sessionId;
@@ -768,6 +808,23 @@ window.__ModuleLoader__.load({
       const auto = firstGate !== null && !historic && effectiveMode(firstGate, sessionId) !== 'manual';
       /** Nothing is rewritten until either the mode asks for it or the reader does. */
       const started = auto || wanted;
+      /**
+       * Whether this Turn is worth an entry at all, as the Host judged it: null
+       * until the answer lands. In 手动 the entry is the whole block, so this is
+       * what keeps it off Turns where a click would come back empty.
+       */
+      const [offered, setOffered] = useState(null);
+      useEffect(() => {
+        if (!usable || started) return undefined;
+        let live = true;
+        probeTurn(sessionId, seq).then(
+          (worth) => { if (live) setOffered(worth); },
+          // A read that fails must not hide the entry for good: show it, and let
+          // the click have the last word.
+          () => { if (live) setOffered(true); },
+        );
+        return () => { live = false; };
+      }, [usable, started, sessionId, seq]);
 
       /** A card near the end of the log grows upwards instead of under the composer. */
       const fitsBelow = (element, room) => !opensUpwards(element, room);
@@ -906,10 +963,14 @@ window.__ModuleLoader__.load({
 
       const parsed = useMemo(() => (phase.kind === 'ready' ? blocks(phase.text) : []), [phase]);
 
+      // A Turn only grows an entry where a click has something to do: the Host
+      // says so, and until it has said so there is no entry to flash up and away.
+      if (!usable) return null;
+      if (!started && offered !== true) return null;
       // Automatic mode keeps a short answer out of the way; a hand-opened block
       // says why it stayed empty instead of vanishing under the reader's finger.
       const quiet = phase.kind === 'none';
-      if (!usable || (quiet && !wanted)) return null;
+      if (quiet && !wanted) return null;
 
       const ready = phase.kind === 'ready';
       const shown = started && open;
@@ -1061,7 +1122,7 @@ window.__ModuleLoader__.load({
 
     // The test suite reaches the pure helpers through this hook; the app never sets it.
     if (typeof window.__DSH_INTERPRETER_TEST__ === 'function') {
-      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, renderBlock, readReply, headline });
+      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, renderBlock, readReply, headline, probeTurn });
     }
 
     return {
