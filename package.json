@@ -1,6 +1,6 @@
 {
   "name": "dsh-interpreter",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Adds a shorter, easier-to-read 「速览」 rewrite below every finished answer, and lets you choose the model that writes it.",
   "keywords": [
     "deepseek-harness",

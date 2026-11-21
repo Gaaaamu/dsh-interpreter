@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Condensed view",
-    "description": "Adds a shorter, conclusion-first version of each finished answer below it: the original stays untouched, and so does the main conversation's context. Manual by default — pick a rewrite model inside the block (none is bundled), then click when you want one.",
+    "description": "Adds an independent “Condensed View” block below each reply: conclusions first, then key points, with exact items such as numbers, code and links kept as they are. The original answer and the main conversation context stay untouched. Manual by default — click the header row to generate, and pick the rewrite model inside the block (none is bundled; each generation makes one model call and may incur charges).",
     "detail": "docs/DETAIL.md"
   }
 }
