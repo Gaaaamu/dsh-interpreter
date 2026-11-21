@@ -43,6 +43,17 @@ window.__ModuleLoader__.load({
      * keeps its ink off the middle, which is what made the old one look off-centre.
      */
     const CHEVRON = { flex: '0 0 auto', display: 'block', transition: 'transform 120ms ease' };
+    /**
+     * The conclusion the folded block keeps: one clipped line beside the name, so a
+     * reader can tell whether opening it is worth the click.
+     */
+    const HEAD_NOTE = {
+      flex: '0 1 auto', minWidth: 0,
+      fontSize: 13, color: 'var(--dsw-alias-label-secondary, inherit)',
+      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+    };
+    /** Longest conclusion the folded line keeps before it is cut with an ellipsis. */
+    const HEADLINE_CHARS = 36;
     const ACTION = {
       fontSize: 12, padding: 0, border: 0, cursor: 'pointer', background: 'transparent',
       color: 'var(--dsw-alias-label-secondary, inherit)',
@@ -289,6 +300,35 @@ window.__ModuleLoader__.load({
       }
       if (last < text.length) out.push(text.slice(last));
       return out;
+    }
+
+    /**
+     * The words inside an inline run, with every mark and link target dropped:
+     * code keeps its exact characters, which is where globs and paths live.
+     * @param node - an inline node, a list of them, or bare text.
+     */
+    function wordsOf(node) {
+      if (typeof node === 'string') return node;
+      if (Array.isArray(node)) return node.map(wordsOf).join('');
+      if (node === null || typeof node !== 'object') return '';
+      const children = node.children ?? node.props?.children;
+      return children === undefined ? '' : wordsOf(children);
+    }
+
+    /**
+     * The one line the folded block keeps: the opening sentence of the rewrite.
+     * It is plain text, so opening the card shows the same sentence as its first
+     * line; a sentence that would outrun the header is cut with `…`.
+     * @param parsed - the rewrite, already folded into blocks.
+     */
+    function headline(parsed) {
+      const first = parsed.find((block) => block.kind === 'paragraph' || block.kind === 'quote' || block.kind === 'list');
+      if (first === undefined) return '';
+      const source = first.kind === 'list' ? first.items[0]?.text ?? '' : first.text;
+      const plain = wordsOf(inline(source, 'headline')).replace(/\s+/g, ' ').trim();
+      const stop = plain.search(/[。！？!?]/);
+      const sentence = (stop === -1 ? plain : plain.slice(0, stop)).trim().replace(/[，,、：:]$/, '');
+      return sentence.length > HEADLINE_CHARS ? `${sentence.slice(0, HEADLINE_CHARS)}…` : sentence;
     }
 
     /**
@@ -873,6 +913,8 @@ window.__ModuleLoader__.load({
 
       const ready = phase.kind === 'ready';
       const shown = started && open;
+      // Folded, the head carries the conclusion itself: the click is only for the rest.
+      const folded = shown || !ready ? '' : headline(parsed);
       if (shown) ensureStyle();
       const body = [];
       if (phase.kind === 'loading') {
@@ -995,6 +1037,7 @@ window.__ModuleLoader__.load({
           },
             h(Chevron, { shown }),
             h('span', null, NAME)),
+          folded === '' ? null : h('span', { style: HEAD_NOTE, title: folded }, `· ${folded}`),
           h('span', { style: SPACER }),
           modeError ? h('span', { style: MUTED }, modeError) : null,
           // Folded away, the head is only the name and the chevron; the switches
@@ -1018,7 +1061,7 @@ window.__ModuleLoader__.load({
 
     // The test suite reaches the pure helpers through this hook; the app never sets it.
     if (typeof window.__DSH_INTERPRETER_TEST__ === 'function') {
-      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, renderBlock, readReply });
+      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, renderBlock, readReply, headline });
     }
 
     return {

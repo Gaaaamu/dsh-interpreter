@@ -23,7 +23,7 @@ globalThis.window = {
   __DSH_INTERPRETER_TEST__: (exposed) => { helpers = exposed },
 }
 new Function(source)()
-const { blocks, inline, safeHref, tableCells, effectiveMode, renderBlock, readReply } = helpers
+const { blocks, inline, safeHref, tableCells, effectiveMode, renderBlock, readReply, headline } = helpers
 
 /** The href of every link in an inline run, or the text where a node is text. */
 const hrefs = (text) => inline(text, 'k').map((node) => (typeof node === 'string' ? node : node.props.href ?? node.type))
@@ -90,6 +90,24 @@ test('the mode a Session sees', () => {
   assert.equal(effectiveMode({ mode: 'session', sessions: ['s'] }, 's'), 'session')
   assert.equal(effectiveMode({ mode: 'session', sessions: ['t'] }, 's'), 'manual')
   assert.equal(effectiveMode({ mode: 'manual', sessions: ['s'] }, 's'), 'manual')
+})
+
+test('the folded line says what the rewrite concluded', () => {
+  const line = (text) => headline(blocks(text))
+  assert.equal(line('结论：直接装依赖。\n\n- 下一步'), '结论：直接装依赖')
+  assert.equal(line('- 先装依赖\n- 再启动'), '先装依赖')
+  assert.equal(line('**加粗**开头。'), '加粗开头')
+  assert.equal(line('改 `*.md` 里的配置。'), '改 *.md 里的配置')
+  assert.equal(line('见 [说明](https://a.b) 后文。'), '见 说明 后文')
+  // Structure alone says nothing: a heading or a code block is not a conclusion.
+  assert.equal(line('# 标题\n\n正文结论。'), '正文结论')
+  assert.equal(line('```\nls\n```\n\n结论。'), '结论')
+  assert.equal(line('| a | b |\n| --- | --- |\n| 1 | 2 |'), '')
+  assert.equal(line(''), '')
+  // A sentence that outruns the header is cut, and says so.
+  const long = line(`${'很长的开头'.repeat(20)}。\n\n后面`)
+  assert.equal(long.length, 37)
+  assert.ok(long.endsWith('…'))
 })
 
 test('refused and failed replies turn into messages a reader can act on', async () => {
