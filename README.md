@@ -21,6 +21,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 * **独立模型路由**：摘要生成可指定与主对话不同的模型（例如主对话使用强编码模型，摘要侧选用表达与概括能力更强的模型），互不干扰。
 * **原生样式融合**：排版、字号、代码块、表格与链接样式直接复用 DSH 主题变量，随宿主主题与字号设置同步变化；右下角实时显示本次摘要消耗的 Token 数量（悬停可查看输入 / 输出明细）。
 * **入口只在有用时出现**：短回答、纯工具轮次、没有正文的轮次不再显示「› 速览」，省得点开只看到一句「这条没什么可压的」；判定在 Host 侧做，一次本地请求、不调模型。
+* **一键带走**：速览右下角的复制按钮把整段 Markdown 原文放进剪贴板，粘贴到笔记、工单或聊天里不丢格式；点完浮出一句「已复制」，一会儿自己消失。
 
 ### 安装与使用
 
@@ -95,7 +96,7 @@ npm test
 7. **可视化设置页**：在前端调整长度档位（简短 / 适中）、模型与提示词；`temperature`、`minChars`、`maxChars` 收入高级选项，无需修改 YAML。
 
 #### 后续：扩展价值
-9. **复制与引用**：一键复制速览，或引用到输入框继续追问（仅在用户主动操作时进入对话上下文）。
+9. **引用**：把速览引用到输入框继续追问（仅在用户主动操作时进入对话上下文）。
 10. **要点溯源**：每条要点可跳转至原文对应段落，便于核对。
 11. **缓存持久化**：生成结果落盘保存（仍不写入 Session Log），重启 DSH 后重复展开不再计费。
 12. **质量反馈**：本地记录「有用 / 太长 / 漏了重点」等反馈，为预设调优提供依据。
@@ -124,6 +125,7 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 * **Independent Model Routing**: Use a dedicated model for summarization without affecting the main conversation's model selection.
 * **Native UI Integration**: Typography, inline-code chips, tables, and link styles inherit directly from DSH theme tokens. A token counter in the bottom-right corner reports the exact cost of each rewrite (hover for input / output / total breakdown).
 * **An Entry Only Where It Helps**: Short answers, tool-only turns, and turns without prose get no 「› 速览」 line, so clicking never lands on "nothing to condense"; the Host decides, with one local request and no model call.
+* **Take It With You**: A copy button in the summary's bottom-right corner puts the whole Markdown on the clipboard, formatting intact for a note, an issue, or a chat message; a brief 「已复制」 confirms it, then fades.
 
 ### Installation & Usage
 
@@ -198,7 +200,7 @@ Listed by priority.
 7. **Visual Settings Page**: Adjust a length level (brief / standard), the model, and the prompt in the UI; `temperature`, `minChars`, and `maxChars` move under advanced options, with no YAML editing required.
 
 #### Later: More Value per Summary
-9. **Copy & Quote**: Copy the summary in one click, or quote it into the composer to follow up (it enters the conversation context only when you do this yourself).
+9. **Quote**: Quote the summary into the composer to follow up (it enters the conversation context only when you do this yourself).
 10. **Traceable Points**: Each bullet links back to the paragraph of the original it came from, for quick verification.
 11. **Persistent Cache**: Save results to disk (still outside the Session Log), so reopening after a DSH restart costs nothing.
 12. **Quality Feedback**: Record local feedback such as "useful / too long / missed the point" to guide preset tuning.

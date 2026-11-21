@@ -672,6 +672,18 @@ window.__ModuleLoader__.load({
         h('path', { d: 'M21 3v6h-6' }));
     }
 
+    /** Two sheets, one behind the other: the usual 「复制」, readable at 14px. */
+    function CopyIcon() {
+      return h('svg', {
+        width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+        stroke: 'currentColor', strokeWidth: 2,
+        strokeLinecap: 'round', strokeLinejoin: 'round',
+        'aria-hidden': 'true',
+      },
+        h('rect', { x: 9, y: 9, width: 12, height: 12, rx: 2 }),
+        h('path', { d: 'M15 9V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h4' }));
+    }
+
     /**
      * A chevron that turns with the block: down when open, right when folded away.
      * @param props.shown - whether the block it points at is open.
@@ -769,6 +781,41 @@ window.__ModuleLoader__.load({
       });
     }
 
+    /**
+     * Put text on the clipboard from a click. The async Clipboard API is the one
+     * to use and needs a secure context; the selection trick covers a page opened
+     * over plain http (a LAN address rather than 127.0.0.1).
+     * @returns a promise of whether the text made it.
+     */
+    function copyText(text) {
+      const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard;
+      if (clipboard !== undefined && typeof clipboard.writeText === 'function') {
+        return clipboard.writeText(text).then(() => true, () => copyBySelection(text));
+      }
+      return Promise.resolve(copyBySelection(text));
+    }
+
+    /** The pre-Clipboard-API way: select the text in a hidden box and copy it. */
+    function copyBySelection(text) {
+      if (typeof document === 'undefined' || document.body === null) return false;
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.top = '0';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      let copied = false;
+      try {
+        copied = document.execCommand('copy');
+      } catch {
+        copied = false;
+      }
+      area.remove();
+      return copied;
+    }
+
     /** One 「速览」 block for the Turn the slot hands over. */
     function Interpreter(props) {
       const sessionId = props.sessionId;
@@ -792,7 +839,15 @@ window.__ModuleLoader__.load({
       const [menuUp, setMenuUp] = useState(false);
       const [saving, setSaving] = useState(false);
       const [pickerError, setPickerError] = useState('');
-      const [iconHover, setIconHover] = useState(false);
+      /** Which footer icon the pointer is over, if any: only that one brightens. */
+      const [iconHover, setIconHover] = useState('');
+      /** '' | 'copied' | 'failed': what the copy button has to say, then it clears. */
+      const [copyState, setCopyState] = useState('');
+      useEffect(() => {
+        if (copyState === '') return undefined;
+        const timer = setTimeout(() => setCopyState(''), 1500);
+        return () => clearTimeout(timer);
+      }, [copyState]);
       const usable = typeof sessionId === 'string' && typeof seq === 'number';
       /** The page's gate, live: the mode menu shows and edits this one. */
       const gate = useSharedGate(usable);
@@ -1009,6 +1064,15 @@ window.__ModuleLoader__.load({
             title: `输入 ${usage.inputTokens} · 输出 ${usage.outputTokens} · 合计 ${usage.totalTokens} tokens`,
           }, `${formatTokens(usage.totalTokens)} tokens`);
 
+      /**
+       * Copy the summary as Markdown, the text the rewrite returned, so it pastes
+       * into a note or a message without the block's styling coming along.
+       */
+      const copySummary = () => {
+        copyText(phase.kind === 'ready' ? phase.text : '').then(
+          (done) => setCopyState(done ? 'copied' : 'failed'));
+      };
+
       /** 「模型」 opens a second-level card under itself; the row keeps its shape. */
       const modelTrigger = h('button', {
         style: ACTION_TRIGGER,
@@ -1109,12 +1173,23 @@ window.__ModuleLoader__.load({
         shown && ready
           ? h('div', { style: FOOT },
               cost,
+              copyState === ''
+                ? null
+                : h('span', { style: MUTED, 'aria-live': 'polite' }, copyState === 'copied' ? '已复制' : '复制失败'),
               h('button', {
-                style: { ...ICON_BUTTON, opacity: iconHover ? 1 : 0.4 },
+                style: { ...ICON_BUTTON, opacity: iconHover === 'copy' ? 1 : 0.4 },
+                title: '复制速览',
+                'aria-label': '复制速览',
+                onMouseEnter: () => setIconHover('copy'),
+                onMouseLeave: () => setIconHover(''),
+                onClick: copySummary,
+              }, h(CopyIcon)),
+              h('button', {
+                style: { ...ICON_BUTTON, opacity: iconHover === 'refresh' ? 1 : 0.4 },
                 title: '重新整理这一条',
                 'aria-label': '重新整理这一条',
-                onMouseEnter: () => setIconHover(true),
-                onMouseLeave: () => setIconHover(false),
+                onMouseEnter: () => setIconHover('refresh'),
+                onMouseLeave: () => setIconHover(''),
                 onClick: () => setAttempt((n) => n + 1),
               }, h(RefreshIcon)))
           : null);
@@ -1122,7 +1197,7 @@ window.__ModuleLoader__.load({
 
     // The test suite reaches the pure helpers through this hook; the app never sets it.
     if (typeof window.__DSH_INTERPRETER_TEST__ === 'function') {
-      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, renderBlock, readReply, headline, probeTurn });
+      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, renderBlock, readReply, headline, probeTurn, copyText });
     }
 
     return {

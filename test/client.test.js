@@ -23,7 +23,7 @@ globalThis.window = {
   __DSH_INTERPRETER_TEST__: (exposed) => { helpers = exposed },
 }
 new Function(source)()
-const { blocks, inline, safeHref, tableCells, effectiveMode, renderBlock, readReply, headline, probeTurn } = helpers
+const { blocks, inline, safeHref, tableCells, effectiveMode, renderBlock, readReply, headline, probeTurn, copyText } = helpers
 
 /** The href of every link in an inline run, or the text where a node is text. */
 const hrefs = (text) => inline(text, 'k').map((node) => (typeof node === 'string' ? node : node.props.href ?? node.type))
@@ -161,4 +161,11 @@ test('a Turn is asked about once, and only a settled answer is remembered', asyn
   } finally {
     globalThis.fetch = original
   }
+})
+
+test('a copy with no clipboard to reach reports itself instead of throwing', async () => {
+  // Outside a browser there is no Clipboard API and no document to select text
+  // in: the button has to hear 「复制失败」 rather than an exception escaping the
+  // click, which would leave it looking like nothing happened.
+  assert.equal(await copyText('速览'), false)
 })
