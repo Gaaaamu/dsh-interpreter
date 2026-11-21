@@ -30,6 +30,12 @@ const MAX_SESSIONS = 200
 /** Rewrites allowed to talk to a model at once; the rest wait their turn. */
 const MAX_CONCURRENT_REWRITES = 2
 
+/**
+ * Smallest target length ever asked for, in characters. A short answer's share
+ * would otherwise come out below what a usable 速览 needs.
+ */
+const MIN_BUDGET = 150
+
 /** Default rewrite instruction; overridable through `config.prompt`. */
 const DEFAULT_PROMPT = `你把技术回答改写成「速览」。读者聪明但不熟悉这块，他只想知道：结论是什么、要不要动手、动手做什么、有什么坑。
 
@@ -61,6 +67,9 @@ const DEFAULTS = {
   temperature: 0.3,
   /** Target length of the readable version, as a share of the original. */
   ratio: 0.35,
+  /** Ceiling on that target, in characters: a share of a long answer would
+   * otherwise still buy a long summary. */
+  capChars: 900,
   /** When a new answer gets a 速览: 'global' every answer, 'session' the listed
    * Sessions only, 'manual' nothing until the reader asks. Manual is the
    * default so that installing the bundle spends nothing on its own. */
@@ -101,6 +110,7 @@ export const Config = z === undefined ? undefined : z.object({
   autoSince: z.number().volatile(),
   temperature: z.number(),
   ratio: z.number(),
+  capChars: z.number(),
   minChars: z.number(),
   maxChars: z.number(),
   prompt: z.string(),
@@ -347,6 +357,21 @@ export function apply(ctx, config) {
   }
 
   /**
+   * The length one rewrite is asked to fit in: its share of the answer, held
+   * above a floor and below the ceiling, so neither a tiny answer nor a huge
+   * one decides how long a 速览 may be.
+   * @param length - the answer's length, in characters.
+   * @param options - the settings in force for this call.
+   */
+  function budgetOf(length, options) {
+    const ratio = typeof options.ratio === 'number' && options.ratio > 0 && options.ratio < 1 ? options.ratio : DEFAULTS.ratio
+    const cap = typeof options.capChars === 'number' && options.capChars > 0 ? options.capChars : DEFAULTS.capChars
+    /** A concrete number works better than "be shorter". */
+    const share = Math.round(length * ratio)
+    return Math.min(Math.max(MIN_BUDGET, share), Math.max(MIN_BUDGET, Math.round(cap)))
+  }
+
+  /**
    * Ask the rewrite model for one readable version.
    * @param text - the committed answer.
    * @param sessionId - routes the call; some providers reject calls without one.
@@ -354,9 +379,7 @@ export function apply(ctx, config) {
    * @param signal - aborts with the HTTP request.
    */
   async function rewrite(text, sessionId, options, signal) {
-    /** A concrete number works better than "be shorter". */
-    const ratio = typeof options.ratio === 'number' && options.ratio > 0 && options.ratio < 1 ? options.ratio : 0.35
-    const budget = Math.max(150, Math.round(text.length * ratio))
+    const budget = budgetOf(text.length, options)
     const first = await ask(`${text}\n\n---\n原文 ${text.length} 字，速览请控制在 ${budget} 字以内。`, sessionId, options, signal)
     if (first.text.length <= budget * 1.5) return first
     /** The model ignored the budget: say it once more with the draft in hand. */

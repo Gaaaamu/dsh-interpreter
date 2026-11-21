@@ -58,6 +58,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 | `minChars` | `400` | 触发摘要的最小字符数，短于该长度的回答将被跳过 |
 | `maxChars` | `40000` | 触发摘要的最大字符数，超出该长度的回答将被跳过 |
 | `ratio` | `0.35` | 摘要目标字数占原文长度的比例 |
+| `capChars` | `900` | 速览自身的字数上限：按 `ratio` 换算出的目标超过它时，按它算（短回答仍至少留 150 字） |
 | `temperature` | `0.3` | 摘要生成的采样温度 |
 | `prompt` | 内置 | 摘要改写指令，可通过自定义指令调整输出风格 |
 
@@ -84,7 +85,7 @@ npm test
 
 #### 近期：让结论先到
 1. **流式输出**：改写结果边生成边显示，第一句结论出来即可阅读；超出预算时先展示首版，二次压缩完成后再替换。
-2. **长度上限**：目标长度改为「比例 + 绝对上限」，避免长回答产出长速览；速览中的代码块默认折叠，或仅保留第一条需要执行的命令。
+2. **速览里的代码块**：默认折叠，或仅保留第一条需要执行的命令。
 3. **更靠前的位置**：若宿主提供回答顶部插槽，将结论置于回答上方；否则在回答完成时提供「跳到速览」提示。
 
 #### 中期：降低理解成本
@@ -160,6 +161,7 @@ Parameters can be tuned in **the profile directory's** `cordis.patch.yml`, under
 | `minChars` | `400` | Minimum character count required to trigger summarization |
 | `maxChars` | `40000` | Maximum character count eligible for summarization |
 | `ratio` | `0.35` | Target summary length as a ratio of the original response |
+| `capChars` | `900` | Ceiling on the summary's own length: when the ratio's share exceeds it, the ceiling wins (short answers still keep at least 150 characters) |
 | `temperature` | `0.3` | Sampling temperature for the rewrite call |
 | `prompt` | Built-in | Custom rewrite instruction to adjust the output style |
 
@@ -186,7 +188,7 @@ Listed by priority.
 
 #### Near Term: Put the Conclusion First
 1. **Streaming Output**: Render the rewrite as it is generated, so the bottom line is readable as soon as its first sentence lands; when a draft exceeds the budget, show it first and swap in the tightened version once ready.
-2. **Length Cap**: Set the target length as a ratio with an absolute ceiling, so long answers no longer produce long summaries; code blocks inside the summary fold by default, or only the first command to run is kept.
+2. **Code Blocks in the Summary**: Fold them by default, or keep only the first command to run.
 3. **Earlier Placement**: If the host exposes a slot above the answer, place the conclusion there; otherwise offer a "jump to summary" hint when the answer finishes.
 
 #### Mid Term: Easier to Understand

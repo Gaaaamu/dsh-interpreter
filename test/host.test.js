@@ -39,7 +39,7 @@ async function host(model, options = {}) {
   }
   const routes = {}
   const state = { calls: 0, active: 0, peak: 0, saves: 0, restarts: 0, models: [] }
-  const row = { options: { config: { provider: 'p', model: 'm' } } }
+  const row = { options: { config: { provider: 'p', model: 'm', ...options.config } } }
 
   /** Stand-in services every plugin instance shares. */
   const services = {
@@ -272,8 +272,41 @@ test('work everyone left is replaced, not joined', async () => {
   await h.cleanup()
 })
 
+test('the target length is a share of the answer, never above the ceiling', async () => {
+  const prompts = []
+  const echo = async function* (request) {
+    prompts.push(request.messages[0].content[0].text)
+    yield { type: 'text-delta', text: '短' }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }
+  // 600 字的回答按 0.35 换算出 210 字，够不到上限。
+  const share = await host(echo)
+  share.setLog([answer()])
+  await share.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.match(prompts[0], /原文 600 字，速览请控制在 210 字以内/)
+  await share.cleanup()
+
+  // 上限比那个换算值小的时候，按上限说，不按比例。
+  prompts.length = 0
+  const capped = await host(echo, { config: { capChars: 200 } })
+  capped.setLog([answer()])
+  await capped.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.match(prompts[0], /控制在 200 字以内/)
+  await capped.cleanup()
+
+  // 短回答按比例会算出小于 150 字的数字，预算有下限。
+  prompts.length = 0
+  const floor = await host(echo)
+  floor.setLog([{ ...answer(), text: 'x'.repeat(400) }])
+  await floor.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.match(prompts[0], /控制在 150 字以内/)
+  await floor.cleanup()
+})
+
 test('a failed second pass keeps the first draft', async () => {
+  const prompts = []
   const h = await host(async function* (request, call) {
+    prompts.push(request.messages[0].content[0].text)
     if (call === 2) {
       yield { type: 'finish', reason: { kind: 'error', failure: { code: 'RATE', message: 'limited' } } }
       return
@@ -285,6 +318,8 @@ test('a failed second pass keeps the first draft', async () => {
   const result = await h.rewrite({ sessionId: 's', seq: 1 }).done
   assert.equal(result.status, 'ok')
   assert.equal(result.text.length, 1000)
+  // 第二遍拿到的预算和第一遍一样。
+  assert.match(prompts[1], /但还有 1000 字，超过 210 字的上限/)
   await h.cleanup()
 })
 
