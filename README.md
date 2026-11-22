@@ -17,6 +17,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 ### 核心特性
 
 * **结论先行，保留精确项**：输出结论加最多 5 条要点；表格、代码块、命令行、文件路径、数字与报错信息保持原样，不做改写。
+* **收起也先给结论**：不展开时折叠行就带上结论句（`› 速览 · 根因是……`），扫一眼就知道这条值不值得打开；展开后仍是完整要点。
 * **旁路运行，零上下文侵入**：基于已落盘的回答发起独立调用，输出仅渲染于前端界面。不修改主模型的系统提示词与工具定义，不写入会话日志（Session Log），不影响长上下文与 Prefix 缓存。
 * **独立模型路由**：摘要生成可指定与主对话不同的模型（例如主对话使用强编码模型，摘要侧选用表达与概括能力更强的模型），互不干扰。
 * **原生样式融合**：排版、字号、代码块、表格与链接样式直接复用 DSH 主题变量，随宿主主题与字号设置同步变化；右下角实时显示本次摘要消耗的 Token 数量（悬停可查看输入 / 输出明细）。
@@ -91,16 +92,16 @@ npm test
 3. **更靠前的位置**：若宿主提供回答顶部插槽，将结论置于回答上方；否则在回答完成时提供「跳到速览」提示。
 
 #### 中期：降低理解成本
-5. **模式分层**：全局默认模式移至设置页，块内只保留「本会话自动速览」开关，明确每个控件的作用范围。
-6. **首次引导**：未选模型时点击速览，直接弹出模型卡片并标注推荐项，选定后立即生成当前这一条。
-7. **可视化设置页**：在前端调整长度档位（简短 / 适中）、模型与提示词；`temperature`、`minChars`、`maxChars` 收入高级选项，无需修改 YAML。
+1. **模式分层**：全局默认模式移至设置页，块内只保留「本会话自动速览」开关，明确每个控件的作用范围。
+2. **首次引导**：未选模型时点击速览，直接弹出模型卡片并标注推荐项，选定后立即生成当前这一条。
+3. **可视化设置页**：在前端调整长度档位（简短 / 适中）、模型与提示词；`temperature`、`minChars`、`maxChars` 收入高级选项，无需修改 YAML。
 
 #### 后续：扩展价值
-9. **引用**：把速览引用到输入框继续追问（仅在用户主动操作时进入对话上下文）。
-10. **要点溯源**：每条要点可跳转至原文对应段落，便于核对。
-11. **缓存持久化**：生成结果落盘保存（仍不写入 Session Log），重启 DSH 后重复展开不再计费。
-12. **质量反馈**：本地记录「有用 / 太长 / 漏了重点」等反馈，为预设调优提供依据。
-13. **场景化预设 (Presets)**：将「提示词 + 摘要模型 + 目标长度」封装为预设，按任务类型（代码配置、概念解释、数据分析）匹配，支持 JSON 导入/导出并内置常用模板。
+1. **引用**：把速览引用到输入框继续追问（仅在用户主动操作时进入对话上下文）。
+2. **要点溯源**：每条要点可跳转至原文对应段落，便于核对。
+3. **缓存持久化**：生成结果落盘保存（仍不写入 Session Log），重启 DSH 后重复展开不再计费。
+4. **质量反馈**：本地记录「有用 / 太长 / 漏了重点」等反馈，为预设调优提供依据。
+5. **场景化预设 (Presets)**：将「提示词 + 摘要模型 + 目标长度」封装为预设，按任务类型（代码配置、概念解释、数据分析）匹配，支持 JSON 导入/导出并内置常用模板。
 
 #### 待评估
 * **多视角切换**（类比解析、场景化叙述、配合可视化技能生成图表等）：这类视角偏向「解释」而非「压缩」，需先明确产品定位再决定是否推进。
@@ -121,6 +122,7 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 ### Key Features
 
 * **Conclusion-First with Technical Fidelity**: Presents a bottom-line conclusion followed by up to five key bullet points. Tables, code blocks, CLI commands, file paths, numbers, and error strings are preserved verbatim.
+* **The Takeaway Survives Folding**: The collapsed row already carries the one-sentence conclusion (`› 速览 · Root cause is …`), so a glance tells you whether opening it is worth it; expanding still shows the full bullets.
 * **Non-Intrusive Side-Channel Execution**: Reads the finalized response from the session log and renders the output only in the UI. It never alters the main model's system prompt or tool definitions, adds no events to the session log, and preserves main context and prefix caching.
 * **Independent Model Routing**: Use a dedicated model for summarization without affecting the main conversation's model selection.
 * **Native UI Integration**: Typography, inline-code chips, tables, and link styles inherit directly from DSH theme tokens. A token counter in the bottom-right corner reports the exact cost of each rewrite (hover for input / output / total breakdown).
@@ -195,16 +197,16 @@ Listed by priority.
 3. **Earlier Placement**: If the host exposes a slot above the answer, place the conclusion there; otherwise offer a "jump to summary" hint when the answer finishes.
 
 #### Mid Term: Easier to Understand
-5. **Layered Modes**: Move the global default mode to the settings page and keep only an "auto-summarize this session" toggle in the block, so the scope of each control is clear.
-6. **First-Run Guidance**: When no model is selected, clicking the block opens the model card directly with recommended picks marked, then generates the current answer right after a pick.
-7. **Visual Settings Page**: Adjust a length level (brief / standard), the model, and the prompt in the UI; `temperature`, `minChars`, and `maxChars` move under advanced options, with no YAML editing required.
+1. **Layered Modes**: Move the global default mode to the settings page and keep only an "auto-summarize this session" toggle in the block, so the scope of each control is clear.
+2. **First-Run Guidance**: When no model is selected, clicking the block opens the model card directly with recommended picks marked, then generates the current answer right after a pick.
+3. **Visual Settings Page**: Adjust a length level (brief / standard), the model, and the prompt in the UI; `temperature`, `minChars`, and `maxChars` move under advanced options, with no YAML editing required.
 
 #### Later: More Value per Summary
-9. **Quote**: Quote the summary into the composer to follow up (it enters the conversation context only when you do this yourself).
-10. **Traceable Points**: Each bullet links back to the paragraph of the original it came from, for quick verification.
-11. **Persistent Cache**: Save results to disk (still outside the Session Log), so reopening after a DSH restart costs nothing.
-12. **Quality Feedback**: Record local feedback such as "useful / too long / missed the point" to guide preset tuning.
-13. **Scenario Presets**: Bundle "prompt + model + target length" into presets matched to task types (code/config, conceptual explanation, data analysis), with JSON import/export and curated built-in templates.
+1. **Quote**: Quote the summary into the composer to follow up (it enters the conversation context only when you do this yourself).
+2. **Traceable Points**: Each bullet links back to the paragraph of the original it came from, for quick verification.
+3. **Persistent Cache**: Save results to disk (still outside the Session Log), so reopening after a DSH restart costs nothing.
+4. **Quality Feedback**: Record local feedback such as "useful / too long / missed the point" to guide preset tuning.
+5. **Scenario Presets**: Bundle "prompt + model + target length" into presets matched to task types (code/config, conceptual explanation, data analysis), with JSON import/export and curated built-in templates.
 
 #### Under Consideration
 * **Alternate Views** (analogy-based explanation, narrative walkthrough, visual diagrams): these lean toward *explaining* rather than *condensing*; the product's positioning needs settling before committing to them.
