@@ -684,6 +684,17 @@ window.__ModuleLoader__.load({
         h('path', { d: 'M15 9V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h4' }));
     }
 
+    /** A cross: says 「复制失败」 in the same spot, so nothing shifts either way. */
+    function CrossIcon() {
+      return h('svg', {
+        width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+        stroke: 'currentColor', strokeWidth: 2,
+        strokeLinecap: 'round', strokeLinejoin: 'round',
+        'aria-hidden': 'true',
+      },
+        h('path', { d: 'M18 6 6 18' }),
+        h('path', { d: 'm6 6 12 12' }));
+    }
     /**
      * A chevron that turns with the block: down when open, right when folded away.
      * @param props.shown - whether the block it points at is open.
@@ -841,7 +852,7 @@ window.__ModuleLoader__.load({
       const [pickerError, setPickerError] = useState('');
       /** Which footer icon the pointer is over, if any: only that one brightens. */
       const [iconHover, setIconHover] = useState('');
-      /** '' | 'copied' | 'failed': what the copy button has to say, then it clears. */
+      /** '' | 'copied' | 'failed': the copy button shows a tick or a cross, then it goes back. */
       const [copyState, setCopyState] = useState('');
       useEffect(() => {
         if (copyState === '') return undefined;
@@ -1173,17 +1184,17 @@ window.__ModuleLoader__.load({
         shown && ready
           ? h('div', { style: FOOT },
               cost,
-              copyState === ''
-                ? null
-                : h('span', { style: MUTED, 'aria-live': 'polite' }, copyState === 'copied' ? '已复制' : '复制失败'),
+              // The button answers in place: a tick for a moment, a cross if the
+              // clipboard refused. Nothing appears next to the cost, so the row
+              // never moves and the token count stays where it was.
               h('button', {
-                style: { ...ICON_BUTTON, opacity: iconHover === 'copy' ? 1 : 0.4 },
-                title: '复制速览',
-                'aria-label': '复制速览',
+                style: { ...ICON_BUTTON, opacity: iconHover === 'copy' || copyState !== '' ? 1 : 0.4 },
+                title: copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制速览',
+                'aria-label': copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制速览',
                 onMouseEnter: () => setIconHover('copy'),
                 onMouseLeave: () => setIconHover(''),
                 onClick: copySummary,
-              }, h(CopyIcon)),
+              }, copyState === 'copied' ? h(CheckIcon) : copyState === 'failed' ? h(CrossIcon) : h(CopyIcon)),
               h('button', {
                 style: { ...ICON_BUTTON, opacity: iconHover === 'refresh' ? 1 : 0.4 },
                 title: '重新整理这一条',

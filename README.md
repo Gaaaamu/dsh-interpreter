@@ -21,7 +21,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 * **独立模型路由**：摘要生成可指定与主对话不同的模型（例如主对话使用强编码模型，摘要侧选用表达与概括能力更强的模型），互不干扰。
 * **原生样式融合**：排版、字号、代码块、表格与链接样式直接复用 DSH 主题变量，随宿主主题与字号设置同步变化；右下角实时显示本次摘要消耗的 Token 数量（悬停可查看输入 / 输出明细）。
 * **入口只在有用时出现**：短回答、纯工具轮次、没有正文的轮次不再显示「› 速览」，省得点开只看到一句「这条没什么可压的」；判定在 Host 侧做，一次本地请求、不调模型。
-* **一键带走**：速览右下角的复制按钮把整段 Markdown 原文放进剪贴板，粘贴到笔记、工单或聊天里不丢格式；点完浮出一句「已复制」，一会儿自己消失。
+* **一键带走**：速览右下角的复制按钮把整段 Markdown 原文放进剪贴板，粘贴到笔记、工单或聊天里不丢格式；点完图标本身变成一个勾，一秒多后自己变回来，不会多出一行字把 token 花费挤开。
 
 ### 安装与使用
 
@@ -125,7 +125,7 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 * **Independent Model Routing**: Use a dedicated model for summarization without affecting the main conversation's model selection.
 * **Native UI Integration**: Typography, inline-code chips, tables, and link styles inherit directly from DSH theme tokens. A token counter in the bottom-right corner reports the exact cost of each rewrite (hover for input / output / total breakdown).
 * **An Entry Only Where It Helps**: Short answers, tool-only turns, and turns without prose get no 「› 速览」 line, so clicking never lands on "nothing to condense"; the Host decides, with one local request and no model call.
-* **Take It With You**: A copy button in the summary's bottom-right corner puts the whole Markdown on the clipboard, formatting intact for a note, an issue, or a chat message; a brief 「已复制」 confirms it, then fades.
+* **Take It With You**: A copy button in the summary's bottom-right corner puts the whole Markdown on the clipboard, formatting intact for a note, an issue, or a chat message; the icon itself turns into a check for a moment and then back, so no text pushes the token count aside.
 
 ### Installation & Usage
 
