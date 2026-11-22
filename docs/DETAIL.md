@@ -14,9 +14,9 @@ Project page: [dsh-interpreter](https://github.com/Gaaaamu/dsh-interpreter)
 - **Language**: 「语言」 picks between 「跟随」, 「中文」 and 「英文」; the default follows the original reply. A fixed language also governs the tightening pass when the draft runs over budget. Each choice keeps its own cache.
 - Folded, the block is one row: 「› 速览 · first sentence」. Expanded, the bottom-right corner shows the tokens this rewrite cost, copies the whole Markdown, and discards the result to redo it.
 
-## The settings page
+## The settings dialog
 
-The menu's last row, 「设置」, opens 「速览设置」, a page of the plugin's own (a panel switch, not DSH's Settings). It carries every row the bundle owns: model, 「详略」, 「语言」, the prompt, the shortest / longest answer, the 普通-tier ratio and ceiling, temperature, and the daily token ceiling. 「保存」 sends the whole page in one write; 「返回对话」 returns to the conversation.
+The menu's last row, 「设置」, opens 「速览设置」 as a small panel over the conversation, drawn with the app's own Modal (not a panel switch of the plugin's own, and not DSH's Settings): the page behind dims and stays exactly where it was. The dialog carries every row the bundle owns: model, 「详略」, 「语言」, the prompt, the shortest / longest answer, the 普通-tier ratio and ceiling, temperature, and the daily token ceiling. 「保存」 sends the whole page in one write and leaves the dialog open with a 「已保存」 note beside the button; Esc, the × in the title bar, or a click on the dimmed page closes it.
 
 - Every editable field is a live field, so a save takes effect in place: no plugin restart, and no interruption to a rewrite in flight. A prompt or number change makes the next click generate afresh, while a tier, language or model switch keeps its own cache.
 - 「自动速览」 and its session allow-list are deliberately not on this page: scope is per session and stays in the block's own menu, so a stale copy of the allow-list can never overwrite another block's change.
@@ -37,7 +37,7 @@ The menu's last row, 「设置」, opens 「速览设置」, a page of the plugi
 
 ## Configuration
 
-In the profile's `cordis.patch.yml`, under the `- id: interpreter` row's `config`. Every row on the settings page and every menu pick is written back to the same row, so the YAML is only needed for values the page does not show.
+In the profile's `cordis.patch.yml`, under the `- id: interpreter` row's `config`. Every row in the settings dialog and every menu pick is written back to the same row, so the YAML is only needed for values the dialog does not show.
 
 | Key | Default | Meaning |
 | --- | --- | --- |

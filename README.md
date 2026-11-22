@@ -26,7 +26,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 * **长度随手调**：`⋯` 菜单里的「详略」两档快切，选完即按新档重写当前这块，其他块跟着改设置；两档各自缓存，来回切换不重复计费。
 * **语言定下来**：速览默认跟原文同语言，也可用「跟随 / 中文 / 英文」固定一种，术语和命令照抄不译；首次生成与收紧那一轮都照办，三种选择各自缓存。
 * **开关收进一个角落菜单**：区块右上角的 `⋯` 把「自动速览 / 详略 / 语言 / 模型」四行收进一个菜单，选完就关，界面上只留折起来的那一行。
-* **插件自己的设置页**：菜单最后一行「设置」打开「速览设置」页，模型、详略、语言、提示词、字数上下限、温度、每日 token 上限集中在一处改，保存就地生效，不用去翻 YAML，也不用重启。
+* **插件自己的设置弹窗**：菜单最后一行「设置」在会话上方弹出「速览设置」小面板，背景压暗、会话位置不动；模型、详略、语言、提示词、字数上下限、温度、每日 token 上限集中在一处改，保存就地生效，Esc、右上角 × 或点背景关掉，不用去翻 YAML，也不用重启。
 
 ### 安装与使用
 
@@ -44,7 +44,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 插件安装后默认处于**手动模式**，不会自动触发调用产生费用：
 1. 点击回答下方的「› 速览」展开区块，点区块右上角的 `⋯`，先在「模型」一行选好当前环境中可用的 `provider / model`。
 2. 同一个菜单里就能调篇幅和语言：需要控制长度时切「普通 / 详细」，想固定语言就切「跟随 / 中文 / 英文」。两者都是本机偏好，存进同一个 `config`。
-3. 菜单最后一行「设置」打开插件自己的「速览设置」页：提示词、字数上下限、温度、每日 token 上限这些要打字或算数的项都在这里，点「保存」就地生效（都是 live 字段，插件不重启；左上角「返回对话」回到会话）。
+3. 菜单最后一行「设置」打开插件自己的「速览设置」弹窗：提示词、字数上下限、温度、每日 token 上限这些要打字或算数的项都在这里，点「保存」就地生效（都是 live 字段，插件不重启），Esc、右上角 × 或点压暗的背景关掉弹窗。
 4. 根据使用习惯切换运行模式（选择存进**当前 Profile 目录下**的 `cordis.patch.yml`，即其中 `- id: interpreter` 那一行的 `config`，由界面经 DSH 的配置接口写回。模型、模式、长度档位、语言、提示词与字数参数都是 DSH 的 live 字段，保存后就地生效，插件不重启，正在生成的速览不受影响）：
 
 | 模式 | 行为说明 |
@@ -103,7 +103,7 @@ npm test
 2. **更靠前的位置**：若宿主提供回答顶部插槽，将结论置于回答上方；否则在回答完成时提供「跳到速览」提示。
 
 #### 中期：降低理解成本
-1. **模式分层**：全局默认模式移至设置页，块内只保留「本会话自动速览」开关，明确每个控件的作用范围。
+1. **模式分层**：全局默认模式移至设置弹窗，块内只保留「本会话自动速览」开关，明确每个控件的作用范围。
 2. **首次引导**：未选模型时点击速览，直接弹出模型卡片并标注推荐项，选定后立即生成当前这一条。
 
 #### 后续：扩展价值
@@ -141,7 +141,7 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 * **Length On Tap**: 「详略」 in the `⋯` menu switches tier in one click; the current block is rewritten at the new size and other blocks follow the setting. Each tier keeps its own cache, so switching back and forth costs nothing.
 * **Language, Pinned**: the 速览 follows the answer's own language by default, or 「跟随 / 中文 / 英文」 pins one; terms and commands are copied verbatim, never translated. Both the first draft and the tightening pass obey it, and each choice keeps its own cache.
 * **Switches in One Corner**: `⋯` at the block's top-right folds 自动速览 / 详略 / 语言 / 模型 into one menu that closes on a pick, leaving the folded row to carry the line on its own.
-* **A Settings Page of Its Own**: the menu's last row, 「设置」, opens the 「速览设置」 page: model, tier, language, prompt, length bounds, temperature and the daily token ceiling in one place. Saves land in place — no YAML to edit, no restart.
+* **A Settings Dialog of Its Own**: the menu's last row, 「设置」, opens 「速览设置」 as a small panel over the conversation — the page behind dims and stays exactly where it was: model, tier, language, prompt, length bounds, temperature and the daily token ceiling in one place. Saves land in place — no YAML to edit, no restart — and Esc, the × or a click on the backdrop closes it.
 
 ### Installation & Usage
 
@@ -159,7 +159,7 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 The plugin defaults to **Manual** mode so no calls are made automatically upon installation:
 1. Click "› 速览" below a response, then `⋯` at its top-right, and pick an available `provider / model` from the 「模型」 row.
 2. The same menu carries size and language: 「普通 / 详细」 for the tier and 「跟随 / 中文 / 英文」 to pin the language; both are local preferences and land in the same `config`.
-3. The menu's last row, 「设置」, opens the plugin's own 「速览设置」 page for the rows that need typing or arithmetic — prompt, shortest / longest answer, temperature, daily token ceiling. 「保存」 writes them in place (all live fields, no plugin restart); 「返回对话」 goes back to the conversation.
+3. The menu's last row, 「设置」, opens the plugin's own 「速览设置」 dialog for the rows that need typing or arithmetic — prompt, shortest / longest answer, temperature, daily token ceiling. 「保存」 writes them in place (all live fields, no plugin restart); Esc, the × or a click on the dimmed backdrop closes the dialog.
 4. Switch modes as needed (the choice lives in **the profile directory's** `cordis.patch.yml`, in the `config` of its `- id: interpreter` row, written back by the UI through DSH's config API. Model, mode, length tier, language, prompt and length bounds are DSH live fields: a save takes effect in place without restarting the plugin, so rewrites in progress are not interrupted):
 
 | Mode | Behavior |
@@ -218,7 +218,7 @@ Listed by priority.
 2. **Earlier Placement**: If the host exposes a slot above the answer, place the conclusion there; otherwise offer a "jump to summary" hint when the answer finishes.
 
 #### Mid Term: Easier to Understand
-1. **Layered Modes**: Move the global default mode to the settings page and keep only an "auto-summarize this session" toggle in the block, so the scope of each control is clear.
+1. **Layered Modes**: Move the global default mode to the settings dialog and keep only an "auto-summarize this session" toggle in the block, so the scope of each control is clear.
 2. **First-Run Guidance**: When no model is selected, clicking the block opens the model card directly with recommended picks marked, then generates the current answer right after a pick.
 
 #### Later: More Value per Summary

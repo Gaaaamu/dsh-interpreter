@@ -9,6 +9,10 @@ window.__ModuleLoader__.load({
   id: 'dsh-interpreter',
   factory(require) {
     const React = require('react');
+    // The app's own dialog primitives. The settings panel is a Modal like the
+    // app's other dialogs: a small card over a dimmed page, Esc and focus handled
+    // by the shell instead of by a hand-rolled overlay.
+    const { Button, Modal } = require('@deepseek-ai/dsh-client-ui-primitives');
     const { createElement: h, useEffect, useMemo, useState } = React;
 
     /** Host route that owns the rewrite model call. */
@@ -138,19 +142,19 @@ window.__ModuleLoader__.load({
 @keyframes ra-reveal-second{0%,33.32%{opacity:0}33.33%,to{opacity:1}}
 @keyframes ra-reveal-third{0%,66.65%{opacity:0}66.66%,to{opacity:1}}
 @media(prefers-reduced-motion:reduce){.ra-wait-ghost{display:none}.ra-wait-sweep,.ra-wait-highlight,.ra-dot2,.ra-dot3{animation:none;opacity:1}}
-/* The settings page takes the whole main panel, the way the app's own entry pages do:
-   a title bar that stays put and one scrolling column under it. */
-.ra-set-page{--ra-set-inset:clamp(24px,4vw,48px);display:flex;flex-direction:column;align-items:center;box-sizing:border-box;height:100%;padding:0 var(--ra-set-inset)}
-.ra-set-page>*{flex:none;width:100%;max-width:860px}
-.ra-set-bar{display:flex;align-items:center;gap:12px;padding:calc(28px + var(--dsh-frame-top-clearance,0px)) 0 14px}
-.ra-set-back{display:inline-flex;align-items:center;gap:4px;margin-left:-6px;padding:5px 10px 5px 6px;border:0;border-radius:var(--dsw-radius-md,8px);background:transparent;cursor:pointer;font:inherit;font-size:13px;color:var(--dsw-alias-label-secondary,inherit);transition:background 120ms ease,color 120ms ease}
-.ra-set-back:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12));color:var(--dsw-alias-label-primary,inherit)}
-.ra-set-title{font-size:15px;font-weight:600;color:var(--dsw-alias-label-primary,inherit)}
-.ra-set-fill{flex:1 1 auto;min-width:8px}
-.ra-set-note{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--dsw-alias-label-secondary,inherit)}
-.ra-set-save{flex:none;padding:6px 16px;border:0;border-radius:var(--dsw-radius-md,8px);cursor:pointer;font:inherit;font-size:13px;background:var(--dsw-alias-state-business-primary,#4176e6);color:#fff;transition:opacity 120ms ease}
-.ra-set-save:disabled{opacity:.5;cursor:default}
-.ra-set-body{flex:1 1 auto;display:flex;flex-direction:column;gap:24px;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-bottom:56px}
+/* The settings dialog is the app's own Modal: a small card over a dimmed
+   conversation, with one scrolling column of rows and the save button in the
+   footer. The doubled selectors beat the Modal's card geometry, which is a
+   single class in a sheet that may arrive after this one. The height cap is
+   what keeps it a panel: past it the rows scroll instead of the card growing
+   to the whole window. The Modal's content element wraps both the title bar
+   and the body, so only its last child — the body, which has no class to hook
+   — scrolls, and the title and close button stay put. */
+.ra-set-dialog.ra-set-dialog{width:min(560px,100%);max-height:min(760px,100%)}
+.ra-set-content.ra-set-content{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.ra-set-content.ra-set-content > div:last-child{flex:1 1 auto;min-height:0;gap:22px;overflow-y:auto;overscroll-behavior:contain}
+.ra-set-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0}
+.ra-set-note{margin-right:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--dsw-alias-label-secondary,inherit)}
 .ra-set-group{display:flex;flex-direction:column;gap:10px}
 .ra-set-head{font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--dsw-alias-label-caption,inherit)}
 .ra-set-hint{margin:0;font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary,inherit)}
@@ -265,6 +269,11 @@ window.__ModuleLoader__.load({
     /** The menu card: one flat layer above the block, no border, an elevation shadow. */
     const MENU = {
       position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+      // The block's own footer draws the cost and the two icon buttons at an
+      // opacity below 1, and a translucent element is a layer of its own. Those
+      // layers come later in the document, so without this the card would slide
+      // under them; a positive z-index keeps it on top wherever it is opened.
+      zIndex: 20,
       minWidth: 190, maxWidth: 320, maxHeight: 260, overflowY: 'auto',
       padding: 4, borderRadius: 12,
       // Opaque on purpose. The native fill is rgba(48,49,54,0.64) — 64% of a blue-cast
@@ -803,24 +812,46 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * The key this plugin's own settings page occupies in the main panel. The page
-     * is not the app's Settings dialog: it edits this bundle's rows only, and the
-     * app shows it like any other entry page.
+     * Whether the settings dialog is open. One flag for the whole page: the block's
+     * ⋯ menu raises it from any Turn, the dialog's close button, Esc and a click on
+     * the mask lower it, and the `shell.overlay` entry that paints the dialog is the
+     * only thing that reads it.
      */
-    const SETTINGS_PANEL = 'interpreter-settings';
+    const settingsStore = { open: false, listeners: new Set() };
+
+    function setSettingsOpen(open) {
+      settingsStore.open = open;
+      for (const listener of settingsStore.listeners) listener(open);
+    }
+
+    /** Raise the dialog; the overlay entry renders it over the conversation. */
+    function openSettingsDialog() {
+      setSettingsOpen(true);
+    }
+
+    /** Lower it, leaving the conversation underneath exactly as it was. */
+    function closeSettingsDialog() {
+      setSettingsOpen(false);
+    }
+
+    /** The flag as the dialog reads it. */
+    function useSettingsOpen() {
+      const [open, setOpen] = useState(settingsStore.open);
+      useEffect(() => {
+        settingsStore.listeners.add(setOpen);
+        setOpen(settingsStore.open);
+        return () => { settingsStore.listeners.delete(setOpen); };
+      }, []);
+      return open;
+    }
 
     /**
-     * Where a settings-page save leaves the chosen rewrite model. The model row is
+     * Where a settings-dialog save leaves the chosen rewrite model. The model row is
      * the one switch the block does not share through `gateStore` (the catalog read
-     * owns it), so the page hands it back here and a block that opens its ⋯ menu
-     * afterwards names the new model. Set before the panel switches away.
+     * owns it), so the dialog hands it back here and a block that opens its ⋯ menu
+     * afterwards names the new model. Set as the save lands, before the dialog closes.
      */
     let savedModel = '';
-
-    /** Set while the plugin is applied: opening the page needs the layout service. */
-    let openSettingsPage = () => {};
-    /** Set while the plugin is applied: closing it is one panel switch back. */
-    let returnToConversation = () => {};
 
     /** The id of the one sheet every block shares. */
     const STYLE_ID = 'dsh-interpreter-css';
@@ -1419,10 +1450,10 @@ window.__ModuleLoader__.load({
             onMouseEnter: () => setHover('settings'),
             onMouseLeave: () => setHover(null),
             onClick: () => {
-              // Leaving the popover open would hang it over the page that replaces
-              // the conversation, so it folds away before the panel switches.
+              // The menu would hang over the dialog's dimmed page, so it folds
+              // away first and the dialog paints one layer above the conversation.
               closeMenu();
-              openSettingsPage();
+              openSettingsDialog();
             },
           },
             h('span', { style: ITEM_TEXT }, '设置'),
@@ -1559,12 +1590,15 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * The plugin's own settings page. The ⋯ menu edits one switch at a time in a
-     * popover; this page puts every row the bundle owns in one place, including the
-     * prompt and the budget numbers a popover has no room for. It holds nothing
+     * The plugin's own settings dialog. The ⋯ menu edits one switch at a time in a
+     * popover; this dialog puts every row the bundle owns in one place, including
+     * the prompt and the budget numbers a popover has no room for. It holds nothing
      * Session-scoped: the automatic-rewrite scope stays in the block's own menu.
+     * It lives in `shell.overlay`, so it opens over whatever the page shows and the
+     * conversation underneath stays exactly where it was.
      */
-    function SettingsPage() {
+    function SettingsDialog() {
+      const open = useSettingsOpen();
       const [state, setState] = useState({ kind: 'loading' });
       const [draft, setDraft] = useState(null);
       const [model, setModel] = useState('');
@@ -1579,6 +1613,7 @@ window.__ModuleLoader__.load({
       const load = () => {
         setState({ kind: 'loading' });
         setError('');
+        setNote('');
         Promise.all([requestGate(), requestModels()]).then(
           ([gate, catalog]) => {
             if (gate.status !== 'ok') throw new Error(gate.message ?? '读不到设置');
@@ -1599,7 +1634,10 @@ window.__ModuleLoader__.load({
         );
       };
 
-      useEffect(() => { ensureStyle(); load(); }, []);
+      // The sheet goes in once; the rows are read every time the dialog is raised,
+      // so it never shows a stale copy of a row saved from elsewhere since.
+      useEffect(() => { ensureStyle(); }, []);
+      useEffect(() => { if (open) load(); }, [open]);
 
       /** A field being retyped: the note and the complaint go as soon as it changes. */
       const edit = (field) => (event) => {
@@ -1684,7 +1722,7 @@ window.__ModuleLoader__.load({
       } else if (state.kind === 'failed') {
         body = [
           h('p', { key: 'error', className: 'ra-set-error' }, state.message),
-          h('button', { key: 'retry', className: 'ra-set-back', onClick: load }, '重试'),
+          h('div', { key: 'retry' }, h(Button, { variant: 'outline', onClick: load }, '重试')),
         ];
       } else {
         body = [
@@ -1737,20 +1775,25 @@ window.__ModuleLoader__.load({
         ];
       }
 
-      return h('div', { className: 'ra-set-page' },
-        h('div', { className: 'ra-set-bar' },
-          h('button', { className: 'ra-set-back', onClick: returnToConversation },
-            h('span', { style: { display: 'inline-flex', transform: 'rotate(180deg)' } }, h(Chevron, { shown: false })),
-            h('span', null, '返回对话')),
-          h('span', { className: 'ra-set-title' }, '速览设置'),
-          h('span', { className: 'ra-set-fill' }),
+      // One dialog: rows in one scrolling column, the save button in the footer and
+      // the note beside it, so a save leaves its answer in view. Esc, the close
+      // button and the mask all close through the same handler, and the rows are
+      // re-read the next time it is raised.
+      return h(Modal, {
+        open,
+        title: '速览设置',
+        closeLabel: '关闭',
+        onClose: closeSettingsDialog,
+        className: 'ra-set-dialog',
+        contentClassName: 'ra-set-content',
+        footer: h('div', { className: 'ra-set-actions' },
           note === '' ? null : h('span', { className: 'ra-set-note' }, note),
-          h('button', {
-            className: 'ra-set-save',
+          h(Button, {
+            variant: 'primary',
             disabled: saving || state.kind !== 'ready',
             onClick: save,
           }, saving ? '保存中…' : '保存')),
-        h('div', { className: 'ra-set-body' }, body));
+      }, body);
     }
 
     // The test suite reaches the pure helpers through this hook; the app never sets it.
@@ -1759,7 +1802,7 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots', 'layout'],
+      inject: ['slots'],
       apply(ctx) {
         ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
           name: 'conversation.chat.turnTail',
@@ -1767,20 +1810,12 @@ window.__ModuleLoader__.load({
           order: 10,
           inject: (sessionId) => ({ sessionId }),
         }, Interpreter));
-        ctx.slots.inject('main', () => ctx.slots.register({
-          name: 'main',
-          key: SETTINGS_PANEL,
-          inject: () => ({}),
-        }, SettingsPage));
-        // Reaching the page is one panel switch; the block's entry row does it, and
-        // the page's own 返回对话 undoes it. Wired after the key is registered, so
-        // neither call can land on a panel the app does not know.
-        openSettingsPage = () => {
-          if (typeof ctx.layout?.selectPanel === 'function') ctx.layout.selectPanel(SETTINGS_PANEL);
-        };
-        returnToConversation = () => {
-          if (typeof ctx.layout?.selectPanel === 'function') ctx.layout.selectPanel(null);
-        };
+        // The settings dialog is an overlay entry, not a panel: it paints over the
+        // page and leaves the conversation underneath exactly as it was.
+        ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+          name: 'shell.overlay',
+          id: 'interpreter-settings',
+        }, SettingsDialog));
       },
     };
   },
