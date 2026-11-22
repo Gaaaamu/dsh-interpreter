@@ -33,6 +33,13 @@ window.__ModuleLoader__.load({
     /** An untouched Turn in manual mode only offers the entry point: no card, no paint. */
     const BARE = { marginTop: 14, padding: '2px 0' };
     const HEAD = { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' };
+    /** The app's own separator between a title and the line that follows it: a
+     *  round dot, drawn rather than typed, so the flex row centres it instead of
+     *  leaving a 「·」 glyph to sit wherever the font baseline puts it. */
+    const SEP = {
+      flex: 'none', width: 3, height: 3, borderRadius: '50%',
+      background: 'var(--dsw-alias-label-caption, currentColor)',
+    };
     const SPACER = { flex: 1 };
     /** The same voice as the Turn header above it: big enough to scan, not bold. */
     const DISCLOSURE = {
@@ -1174,7 +1181,8 @@ window.__ModuleLoader__.load({
           },
             h(Chevron, { shown }),
             h('span', null, NAME)),
-          folded === '' ? null : h('span', { style: HEAD_NOTE, title: folded }, `· ${folded}`),
+          folded === '' ? null : h('span', { style: SEP, 'aria-hidden': 'true' }),
+          folded === '' ? null : h('span', { style: HEAD_NOTE, title: folded }, folded),
           h('span', { style: SPACER }),
           modeError ? h('span', { style: MUTED }, modeError) : null,
           // Folded away, the head is only the name and the chevron; the switches
