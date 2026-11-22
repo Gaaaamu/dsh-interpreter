@@ -192,9 +192,8 @@ window.__ModuleLoader__.load({
       fontSize: 11, fontVariantNumeric: 'tabular-nums', opacity: 0.75,
       color: 'var(--dsw-alias-label-secondary, inherit)',
     };
-    /** A menu trigger keeps its label whether the card is open or not. */
-    const ACTION_TRIGGER = { ...ACTION, display: 'inline-flex', alignItems: 'center', gap: 5 };
-    /** A sentence inside a menu card, where an item would sit. */    const MENU_TEXT = {
+    /** A sentence inside a menu card, where an item would sit. */
+    const MENU_TEXT = {
       padding: '7px 10px', fontSize: 13, lineHeight: 1.6,
       color: 'var(--dsw-alias-label-secondary, inherit)',
     };
@@ -218,14 +217,21 @@ window.__ModuleLoader__.load({
       { value: 'zh', label: '固定中文' },
       { value: 'en', label: '固定英文' },
     ];
+    /** The ⋯ in the corner: quieter than the copy button, never quite gone. */
+    const MORE_BUTTON = { ...ICON_BUTTON, opacity: 0.55 };
+    /** A row that drills into one more list: its current value on the right, then the way in. */
+    const ROW_VALUE = {
+      flex: '0 0 auto', maxWidth: 132, marginLeft: 8,
+      fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      color: 'var(--dsw-alias-label-caption, currentColor)',
+    };
+    /** Between the switches and the settings entry in the ⋯ list. */
+    const DIVIDER = {
+      height: 1, margin: '4px 6px',
+      background: 'var(--dsw-alias-border-l2, rgba(128,128,128,0.22))',
+    };
     /** Anchors a menu card to the control that opens it. */
     const PICKER = { position: 'relative', display: 'inline-flex' };
-    const TRIGGER = {
-      display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: 230,
-      fontSize: 12, padding: 0, border: 0, cursor: 'pointer',
-      background: 'transparent', color: 'var(--dsw-alias-label-secondary, inherit)',
-    };
-    const TRIGGER_TEXT = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
     /** The menu card: one flat layer above the block, no border, an elevation shadow. */
     const MENU = {
       position: 'absolute', top: 'calc(100% + 6px)', right: 0,
@@ -755,6 +761,17 @@ window.__ModuleLoader__.load({
         h('path', { d: 'm6 9 6 6 6-6' }));
     }
 
+    /** Three dots: the one place this block's own switches and settings live. */
+    function MoreIcon() {
+      return h('svg', {
+        width: 14, height: 14, viewBox: '0 0 24 24', fill: 'currentColor',
+        'aria-hidden': 'true',
+      },
+        h('circle', { cx: 5, cy: 12, r: 1.9 }),
+        h('circle', { cx: 12, cy: 12, r: 1.9 }),
+        h('circle', { cx: 19, cy: 12, r: 1.9 }));
+    }
+
     /** The id of the one sheet every block shares. */
     const STYLE_ID = 'dsh-interpreter-css';
 
@@ -889,19 +906,16 @@ window.__ModuleLoader__.load({
       const [wanted, setWanted] = useState(false);
       /** Set when the Host says this answer predates automation: it waits for a click. */
       const [historic, setHistoric] = useState(false);
-      const [modeOpen, setModeOpen] = useState(false);
-      const [modeHover, setModeHover] = useState(null);
+      /** The last failed save: it shows in the head, where the menu came from. */
       const [modeError, setModeError] = useState('');
-      const [lenOpen, setLenOpen] = useState(false);
-      const [lenHover, setLenHover] = useState(null);
-      const [langOpen, setLangOpen] = useState(false);
-      const [langHover, setLangHover] = useState(null);
       /** Bumped when the length tier or the language changes: this block redoes its Turn. */
       const [revision, setRevision] = useState(0);
       /** The catalog, read the first time the menu opens and kept afterwards. */
       const [models, setModels] = useState(null);
       const [choice, setChoice] = useState('');
       const [menuOpen, setMenuOpen] = useState(false);
+      /** Which list the ⋯ shows: the top one, or one it drilled into. */
+      const [view, setView] = useState('root');
       const [hover, setHover] = useState(null);
       /** True when the card has to grow upwards to stay clear of the composer. */
       const [menuUp, setMenuUp] = useState(false);
@@ -968,15 +982,16 @@ window.__ModuleLoader__.load({
         h('span', { style: ITEM_TEXT }, label),
         h('span', { key: 'check', style: CHECK_SLOT }, inForce ? h(CheckIcon) : null));
 
-      const openModelMenu = (event) => {
-        event.stopPropagation();
-        setModeOpen(false);
-        setLenOpen(false);
-        setLangOpen(false);
+      /** Folding the menu away always returns it to its top list. */
+      const closeMenu = () => {
+        setMenuOpen(false);
+        setView('root');
+        setHover(null);
+      };
+
+      /** The catalog is read once; a failed read gets another chance on next open. */
+      const loadModels = () => {
         setPickerError('');
-        setMenuUp(!fitsBelow(event.currentTarget, 270));
-        setMenuOpen((open) => !open);
-        // The catalog is read once; a failed read gets another chance on next open.
         if (models !== null && models.kind !== 'failed') return;
         setModels({ kind: 'loading' });
         requestModels()
@@ -986,6 +1001,20 @@ window.__ModuleLoader__.load({
             setModels({ kind: 'ready', providers: result.providers });
           })
           .catch((error) => setModels({ kind: 'failed', message: error instanceof Error ? error.message : String(error) }));
+      };
+
+      /** The ⋯ opens the one card this block has; clicking it again folds it away. */
+      const openMenu = (event) => {
+        event.stopPropagation();
+        if (menuOpen) {
+          closeMenu();
+          return;
+        }
+        setMenuUp(!fitsBelow(event.currentTarget, 270));
+        setView('root');
+        setHover(null);
+        setMenuOpen(true);
+        loadModels();
       };
 
       /** Choosing is saving: the menu writes through and folds itself away. */
@@ -999,7 +1028,7 @@ window.__ModuleLoader__.load({
             if (result.status !== 'ok') throw new Error(result.message ?? '保存失败');
             setSaving(false);
             setChoice(value);
-            setMenuOpen(false);
+            closeMenu();
             // Picking a model on a quiet Turn is itself a request for a block.
             setWanted(true);
             setAttempt((n) => n + 1);
@@ -1017,7 +1046,7 @@ window.__ModuleLoader__.load({
        * is 本会话, every Session back to manual while it is 全部.
        */
       const chooseMode = (pick) => {
-        setModeOpen(false);
+        closeMenu();
         setModeError('');
         const previous = gate;
         let change;
@@ -1068,7 +1097,7 @@ window.__ModuleLoader__.load({
        * produced is still cached, so switching back and forth costs nothing.
        */
       const chooseLength = (pick) => {
-        setLenOpen(false);
+        closeMenu();
         setModeError('');
         const previous = gate;
         setSharedGate({ ...previous, length: pick });
@@ -1089,7 +1118,7 @@ window.__ModuleLoader__.load({
        * never re-bills a whole Session. Both sides of a switch stay cached.
        */
       const chooseLanguage = (pick) => {
-        setLangOpen(false);
+        closeMenu();
         setModeError('');
         const previous = gate;
         setSharedGate({ ...previous, language: pick });
@@ -1104,13 +1133,13 @@ window.__ModuleLoader__.load({
           });
       };
 
-      /** Clicking anywhere else folds the model list away. */
+      /** Clicking anywhere else folds the menu away. */
       useEffect(() => {
-        if (!menuOpen && !modeOpen && !lenOpen && !langOpen) return undefined;
-        const close = () => { setMenuOpen(false); setModeOpen(false); setLenOpen(false); setLangOpen(false); };
+        if (!menuOpen) return undefined;
+        const close = () => { setMenuOpen(false); setView('root'); };
         document.addEventListener('click', close);
         return () => document.removeEventListener('click', close);
-      }, [menuOpen, modeOpen, lenOpen, langOpen]);
+      }, [menuOpen]);
 
       useEffect(() => {
         if (!usable || !started) return undefined;
@@ -1212,15 +1241,68 @@ window.__ModuleLoader__.load({
           (done) => setCopyState(done ? 'copied' : 'failed'));
       };
 
-      /** 「模型」 opens a second-level card under itself; the row keeps its shape. */
-      const modelTrigger = h('button', {
-        style: ACTION_TRIGGER,
-        title: '换一个改写模型',
-        onClick: openModelMenu,
+      /** What the model row says: the chosen model's name, or where it stands. */
+      const modelLabel = () => {
+        if (choice === '') return '未选择';
+        const [provider, model] = choice.split('::');
+        if (models !== null && models.kind === 'ready') {
+          for (const entry of models.providers) {
+            if (entry.id !== provider) continue;
+            for (const candidate of entry.models) if (candidate.id === model) return candidate.name;
+          }
+        }
+        return model ?? choice;
+      };
+
+      /** A row that drills into one more list: its current value, then the way in. */
+      const valueRow = (key, label, value, into) => h('button', {
+        key,
+        style: { ...ITEM, ...(hover === key ? ITEM_HOVER : null) },
+        onMouseEnter: () => setHover(key),
+        onMouseLeave: () => setHover(null),
+        onClick: () => {
+          setModeError('');
+          setPickerError('');
+          setHover(null);
+          setView(into);
+        },
       },
-        h('span', null, '模型'));
-      let control = modelTrigger;
-      if (menuOpen) {
+        h('span', { style: ITEM_TEXT }, label),
+        value === '' ? null : h('span', { style: ROW_VALUE, title: value }, value),
+        h('span', { key: 'in', style: CHECK_SLOT }, h(Chevron, { shown: false })));
+
+      /** The way back out of a drilled-in list. */
+      const backRow = h('button', {
+        key: 'back',
+        style: { ...ITEM, ...(hover === 'back' ? ITEM_HOVER : null) },
+        onMouseEnter: () => setHover('back'),
+        onMouseLeave: () => setHover(null),
+        onClick: () => { setHover(null); setView('root'); },
+      },
+        h('span', { key: 'out', style: { ...CHECK_SLOT, transform: 'rotate(180deg)' } }, h(Chevron, { shown: false })),
+        h('span', { style: ITEM_TEXT }, '返回'));
+
+      /** The card's contents: the four switches, or the list one of them opens. */
+      let menuRows;
+      if (view === 'mode') {
+        const current = gate === null ? null : effectiveMode(gate, sessionId);
+        menuRows = [backRow, ...MODE_MENU.map((item) => menuRow(
+          item.value, item.label, item.value === current, item.value === hover,
+          () => chooseMode(item.value), () => setHover(item.value), () => setHover(null),
+        ))];
+      } else if (view === 'length') {
+        const current = gate === null ? null : effectiveLength(gate);
+        menuRows = [backRow, ...LENGTH_MENU.map((item) => menuRow(
+          item.value, item.label, item.value === current, item.value === hover,
+          () => chooseLength(item.value), () => setHover(item.value), () => setHover(null),
+        ))];
+      } else if (view === 'language') {
+        const current = gate === null ? null : effectiveLanguage(gate);
+        menuRows = [backRow, ...LANG_MENU.map((item) => menuRow(
+          item.value, item.label, item.value === current, item.value === hover,
+          () => chooseLanguage(item.value), () => setHover(item.value), () => setHover(null),
+        ))];
+      } else if (view === 'model') {
         const rows = [];
         if (models === null || models.kind === 'loading') {
           rows.push(h('div', { key: 'load', style: MENU_TEXT }, '读取模型清单…'));
@@ -1249,104 +1331,38 @@ window.__ModuleLoader__.load({
             style: { ...MENU_TEXT, color: 'var(--dsw-alias-state-error-primary, inherit)' },
           }, pickerError));
         }
-        // Clicks inside the card stay inside it: the outside-click closer would
-        // otherwise fold it away before a failed save could say why.
-        control = h('div', { style: PICKER }, modelTrigger,
-          h('div', { style: cardStyle(), onClick: (event) => event.stopPropagation() }, rows));
+        menuRows = [backRow, ...rows];
+      } else {
+        menuRows = [
+          valueRow('mode', '自动速览', gate === null ? '' : MODE_LABEL[effectiveMode(gate, sessionId)] ?? '', 'mode'),
+          valueRow('length', '详略', gate === null ? '' : LENGTH_LABEL[effectiveLength(gate)] ?? '', 'length'),
+          valueRow('language', '语言', gate === null ? '' : LANG_LABEL[effectiveLanguage(gate)] ?? '', 'language'),
+          valueRow('model', '模型', modelLabel(), 'model'),
+        ];
       }
 
-      /** 「全部 / 本会话 / 手动」: the switch itself, kept as small as the other actions. */
-      let gateControl = null;
-      if (gate !== null) {
-        const current = effectiveMode(gate, sessionId);
-        const items = MODE_MENU.map((item) => menuRow(
-          item.value,
-          item.label,
-          item.value === current,
-          item.value === modeHover,
-          () => chooseMode(item.value),
-          () => setModeHover(item.value),
-          () => setModeHover(null),
-        ));
-        gateControl = h('div', { style: PICKER },
-          h('button', {
-            style: TRIGGER,
-            title: '新的回答要不要自动速览',
-            onClick: (event) => {
-              event.stopPropagation();
-              // Two open cards would sit on top of each other; the mode wins.
-              setMenuOpen(false);
-              setLenOpen(false);
-              setLangOpen(false);
-              setMenuUp(!fitsBelow(event.currentTarget, 130));
-              setModeOpen((open) => !open);
-            },
-          },
-            h('span', { style: TRIGGER_TEXT }, MODE_LABEL[current] ?? '模式')),
-          modeOpen ? h('div', { style: cardStyle(), onClick: (event) => event.stopPropagation() }, items) : null);
-      }
-
-      /** 「普通 / 详细」: how much text a 速览 is worth, switched in place. */
-      let lengthControl = null;
-      if (gate !== null) {
-        const current = effectiveLength(gate);
-        const items = LENGTH_MENU.map((item) => menuRow(
-          item.value,
-          item.label,
-          item.value === current,
-          item.value === lenHover,
-          () => chooseLength(item.value),
-          () => setLenHover(item.value),
-          () => setLenHover(null),
-        ));
-        lengthControl = h('div', { style: PICKER },
-          h('button', {
-            style: TRIGGER,
-            title: '速览写多长',
-            onClick: (event) => {
-              event.stopPropagation();
-              // One card at a time: the switch that was just clicked owns the space.
-              setMenuOpen(false);
-              setModeOpen(false);
-              setLangOpen(false);
-              setMenuUp(!fitsBelow(event.currentTarget, 130));
-              setLenOpen((open) => !open);
-            },
-          },
-            h('span', { style: TRIGGER_TEXT }, LENGTH_LABEL[current])),
-          lenOpen ? h('div', { style: cardStyle(), onClick: (event) => event.stopPropagation() }, items) : null);
-      }
-
-      /** 「跟随回答 / 固定中文 / 固定英文」: the language a 速览 is written in. */
-      let languageControl = null;
-      if (gate !== null) {
-        const current = effectiveLanguage(gate);
-        const items = LANG_MENU.map((item) => menuRow(
-          item.value,
-          item.label,
-          item.value === current,
-          item.value === langHover,
-          () => chooseLanguage(item.value),
-          () => setLangHover(item.value),
-          () => setLangHover(null),
-        ));
-        languageControl = h('div', { style: PICKER },
-          h('button', {
-            style: TRIGGER,
-            title: '速览用什么语言写',
-            onClick: (event) => {
-              event.stopPropagation();
-              // One card at a time: the switch that was just clicked owns the space.
-              setMenuOpen(false);
-              setModeOpen(false);
-              setLenOpen(false);
-              setMenuUp(!fitsBelow(event.currentTarget, 130));
-              setLangOpen((open) => !open);
-            },
-          },
-            h('span', { style: TRIGGER_TEXT }, LANG_LABEL[current])),
-          langOpen ? h('div', { style: cardStyle(), onClick: (event) => event.stopPropagation() }, items) : null);
-      }
+      /**
+       * The ⋯ and its card: the switches that used to sit in the head live one
+       * level down, so a folded line is just its name and an open one its text.
+       */
+      const menuControl = h('div', { style: PICKER },
+        h('button', {
+          style: { ...MORE_BUTTON, opacity: iconHover === 'more' || menuOpen ? 1 : 0.55 },
+          title: '速览设置',
+          'aria-label': '速览设置',
+          'aria-expanded': menuOpen,
+          onMouseEnter: () => setIconHover('more'),
+          onMouseLeave: () => setIconHover(''),
+          onClick: openMenu,
+        }, h(MoreIcon)),
+        menuOpen
+          ? h('div', {
+              style: cardStyle(),
+              // Clicks inside the card stay inside it: the outside-click closer
+              // would otherwise fold it away before a failed save could say why.
+              onClick: (event) => event.stopPropagation(),
+            }, menuRows)
+          : null);
 
       // A budget stop collapsed is only a line in the page, like an untouched
       // Turn; opening it brings back the card the explanation deserves.
@@ -1371,12 +1387,9 @@ window.__ModuleLoader__.load({
           folded === '' ? null : h('span', { style: HEAD_NOTE, title: folded }, folded),
           h('span', { style: SPACER }),
           modeError ? h('span', { style: MUTED }, modeError) : null,
-          // Folded away, the head is only the name and the chevron; the switches
-          // belong to the thing they switch, and come back with it.
-          shown ? gateControl : null,
-          shown ? lengthControl : null,
-          shown ? languageControl : null,
-          shown ? control : null),
+          // One ⋯ holds every switch this block has: a folded line is just its
+          // name, and the switches come back only when they are asked for.
+          menuControl),
         shown ? h('div', { style: BODY, className: 'ra-md' }, body) : null,
         shown && ready
           ? h('div', { style: FOOT },
