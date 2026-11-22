@@ -212,6 +212,13 @@ window.__ModuleLoader__.load({
       { value: 'normal', label: '适中' },
       { value: 'detailed', label: '详细' },
     ];
+    /** The answer's own language, or one fixed, in the same three words the Host stores. */
+    const LANG_LABEL = { auto: '跟随', zh: '中文', en: '英文' };
+    const LANG_MENU = [
+      { value: 'auto', label: '跟随回答' },
+      { value: 'zh', label: '固定中文' },
+      { value: 'en', label: '固定英文' },
+    ];
     /** Anchors a menu card to the control that opens it. */
     const PICKER = { position: 'relative', display: 'inline-flex' };
     const TRIGGER = {
@@ -608,10 +615,10 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Change the mode, the allow-list or the length tier. Only the change
-     * travels, never the whole list: every block holds its own copy, and a stale
-     * copy sent back would wipe out what another block added.
-     * @param change - `{ mode?, addSessions?, removeSessions?, length? }`.
+     * Change the mode, the allow-list, the length tier or the language. Only the
+     * change travels, never the whole list: every block holds its own copy, and a
+     * stale copy sent back would wipe out what another block added.
+     * @param change - `{ mode?, addSessions?, removeSessions?, length?, language? }`.
      */
     function saveGate(change) {
       return fetch(CONFIG, {
@@ -636,6 +643,14 @@ window.__ModuleLoader__.load({
      */
     function effectiveLength(gate) {
       return LENGTH_LABEL[gate?.length] === undefined ? 'normal' : gate.length;
+    }
+
+    /**
+     * The language a gate names, standing in with 跟随回答 for anything else: an
+     * older Host, or a row written by hand in a newer vocabulary.
+     */
+    function effectiveLanguage(gate) {
+      return LANG_LABEL[gate?.language] === undefined ? 'auto' : gate.language;
     }
 
     /** 12431 is harder to take in at a glance than 12.4k. */
@@ -757,9 +772,10 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * The gate (mode and allow-list) and the length tier, read once for the whole
-     * page and shared by every block, so a long Session costs one request instead
-     * of one per Turn, and a change made in one block reaches the others.
+     * The gate (mode and allow-list), the length tier and the language, read once
+     * for the whole page and shared by every block, so a long Session costs one
+     * request instead of one per Turn, and a change made in one block reaches the
+     * others.
      */
     const gateStore = { value: null, failed: false, loading: false, listeners: new Set() };
 
@@ -779,6 +795,7 @@ window.__ModuleLoader__.load({
             mode: result.mode,
             sessions: Array.isArray(result.sessions) ? result.sessions : [],
             length: effectiveLength(result),
+            language: effectiveLanguage(result),
           });
         })
         .catch(() => {
@@ -786,7 +803,7 @@ window.__ModuleLoader__.load({
           // default, a folded line that waits for a click, and let the next
           // block that mounts try again.
           gateStore.failed = true;
-          setSharedGate({ mode: 'manual', sessions: [], length: 'normal' });
+          setSharedGate({ mode: 'manual', sessions: [], length: 'normal', language: 'auto' });
         })
         .finally(() => { gateStore.loading = false; });
     }
@@ -878,7 +895,9 @@ window.__ModuleLoader__.load({
       const [modeError, setModeError] = useState('');
       const [lenOpen, setLenOpen] = useState(false);
       const [lenHover, setLenHover] = useState(null);
-      /** Bumped when the length tier changes: this block redoes its Turn at the new size. */
+      const [langOpen, setLangOpen] = useState(false);
+      const [langHover, setLangHover] = useState(null);
+      /** Bumped when the length tier or the language changes: this block redoes its Turn. */
       const [revision, setRevision] = useState(0);
       /** The catalog, read the first time the menu opens and kept afterwards. */
       const [models, setModels] = useState(null);
@@ -954,6 +973,7 @@ window.__ModuleLoader__.load({
         event.stopPropagation();
         setModeOpen(false);
         setLenOpen(false);
+        setLangOpen(false);
         setPickerError('');
         setMenuUp(!fitsBelow(event.currentTarget, 270));
         setMenuOpen((open) => !open);
@@ -1031,6 +1051,7 @@ window.__ModuleLoader__.load({
                 mode: result.mode,
                 sessions: result.sessions,
                 length: effectiveLength(result),
+                language: effectiveLanguage(result),
               });
             }
           })
@@ -1063,13 +1084,34 @@ window.__ModuleLoader__.load({
           });
       };
 
+      /**
+       * The language switch works like the length one: written through for every
+       * block, and only the block that was clicked redoes its Turn, so a click
+       * never re-bills a whole Session. Both sides of a switch stay cached.
+       */
+      const chooseLanguage = (pick) => {
+        setLangOpen(false);
+        setModeError('');
+        const previous = gate;
+        setSharedGate({ ...previous, language: pick });
+        saveGate({ language: pick })
+          .then((result) => {
+            if (result.status !== 'ok') throw new Error(result.message ?? '没保存上');
+            if (previous.language !== pick && started) setRevision((n) => n + 1);
+          })
+          .catch((error) => {
+            setSharedGate(previous);
+            setModeError(error instanceof Error ? error.message : String(error));
+          });
+      };
+
       /** Clicking anywhere else folds the model list away. */
       useEffect(() => {
-        if (!menuOpen && !modeOpen && !lenOpen) return undefined;
-        const close = () => { setMenuOpen(false); setModeOpen(false); setLenOpen(false); };
+        if (!menuOpen && !modeOpen && !lenOpen && !langOpen) return undefined;
+        const close = () => { setMenuOpen(false); setModeOpen(false); setLenOpen(false); setLangOpen(false); };
         document.addEventListener('click', close);
         return () => document.removeEventListener('click', close);
-      }, [menuOpen, modeOpen, lenOpen]);
+      }, [menuOpen, modeOpen, lenOpen, langOpen]);
 
       useEffect(() => {
         if (!usable || !started) return undefined;
@@ -1236,6 +1278,7 @@ window.__ModuleLoader__.load({
               // Two open cards would sit on top of each other; the mode wins.
               setMenuOpen(false);
               setLenOpen(false);
+              setLangOpen(false);
               setMenuUp(!fitsBelow(event.currentTarget, 130));
               setModeOpen((open) => !open);
             },
@@ -1266,12 +1309,44 @@ window.__ModuleLoader__.load({
               // One card at a time: the switch that was just clicked owns the space.
               setMenuOpen(false);
               setModeOpen(false);
+              setLangOpen(false);
               setMenuUp(!fitsBelow(event.currentTarget, 130));
               setLenOpen((open) => !open);
             },
           },
             h('span', { style: TRIGGER_TEXT }, LENGTH_LABEL[current])),
           lenOpen ? h('div', { style: cardStyle(), onClick: (event) => event.stopPropagation() }, items) : null);
+      }
+
+      /** 「跟随回答 / 固定中文 / 固定英文」: the language a 速览 is written in. */
+      let languageControl = null;
+      if (gate !== null) {
+        const current = effectiveLanguage(gate);
+        const items = LANG_MENU.map((item) => menuRow(
+          item.value,
+          item.label,
+          item.value === current,
+          item.value === langHover,
+          () => chooseLanguage(item.value),
+          () => setLangHover(item.value),
+          () => setLangHover(null),
+        ));
+        languageControl = h('div', { style: PICKER },
+          h('button', {
+            style: TRIGGER,
+            title: '速览用什么语言写',
+            onClick: (event) => {
+              event.stopPropagation();
+              // One card at a time: the switch that was just clicked owns the space.
+              setMenuOpen(false);
+              setModeOpen(false);
+              setLenOpen(false);
+              setMenuUp(!fitsBelow(event.currentTarget, 130));
+              setLangOpen((open) => !open);
+            },
+          },
+            h('span', { style: TRIGGER_TEXT }, LANG_LABEL[current])),
+          langOpen ? h('div', { style: cardStyle(), onClick: (event) => event.stopPropagation() }, items) : null);
       }
 
       // A budget stop collapsed is only a line in the page, like an untouched
@@ -1301,6 +1376,7 @@ window.__ModuleLoader__.load({
           // belong to the thing they switch, and come back with it.
           shown ? gateControl : null,
           shown ? lengthControl : null,
+          shown ? languageControl : null,
           shown ? control : null),
         shown ? h('div', { style: BODY, className: 'ra-md' }, body) : null,
         shown && ready
@@ -1330,7 +1406,7 @@ window.__ModuleLoader__.load({
 
     // The test suite reaches the pure helpers through this hook; the app never sets it.
     if (typeof window.__DSH_INTERPRETER_TEST__ === 'function') {
-      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, renderBlock, readReply, headline, probeTurn, copyText });
+      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText });
     }
 
     return {

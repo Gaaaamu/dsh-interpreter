@@ -24,6 +24,9 @@ const MODES = ['global', 'session', 'manual']
 /** The length tiers the block offers, shortest first. */
 const LENGTH_TIERS = ['short', 'normal', 'detailed']
 
+/** The languages a 速览 can be written in: the answer's own, or one fixed. */
+const LANGUAGES = ['auto', 'zh', 'en']
+
 /** Largest request body accepted from the page, in bytes. */
 const MAX_BODY_BYTES = 4096
 
@@ -90,6 +93,9 @@ const DEFAULTS = {
   /** 简短 / 适中 / 详细, switched in the block. 适中 (the default) uses the
    * configured ratio and ceiling; the two ends override them for this reader. */
   length: 'normal',
+  /** 跟随回答 / 固定中文 / 固定英文. 'auto' keeps prompt rule 2 (the answer's own
+   * language); a fixed one is said in the user Turn, after that rule. */
+  language: 'auto',
   /** When a new answer gets a 速览: 'global' every answer, 'session' the listed
    * Sessions only, 'manual' nothing until the reader asks. Manual is the
    * default so that installing the bundle spends nothing on its own. */
@@ -131,6 +137,8 @@ export const Config = z === undefined ? undefined : z.object({
   sessions: z.array(z.string()).volatile(),
   /** Picked in the block; live so switching it costs no restart and no cache. */
   length: z.string().volatile(),
+  /** Same, for the language the 速览 is written in. */
+  language: z.string().volatile(),
   /** When automation was last switched on or widened, in epoch milliseconds. */
   autoSince: z.number().volatile(),
   temperature: z.number(),
@@ -440,6 +448,17 @@ export function apply(ctx, config) {
   }
 
   /**
+   * The sentence that fixes the language, or nothing when the 速览 follows the
+   * answer. Said in the user Turn, so it stands after the prompt's own rule 2.
+   * @param options - the settings in force for this call.
+   */
+  function languageRule(options) {
+    if (options.language === 'zh') return ' 速览一律用中文写，即使原文是其他语言。'
+    if (options.language === 'en') return ' 速览一律用英文写，即使原文是其他语言。'
+    return ''
+  }
+
+  /**
    * Ask the rewrite model for one readable version.
    * @param text - the committed answer.
    * @param sessionId - routes the call; some providers reject calls without one.
@@ -448,13 +467,14 @@ export function apply(ctx, config) {
    */
   async function rewrite(text, sessionId, options, signal) {
     const budget = budgetOf(text.length, options)
-    const first = await ask(`${text}\n\n---\n原文 ${text.length} 字，速览请控制在 ${budget} 字以内。`, sessionId, options, signal)
+    const language = languageRule(options)
+    const first = await ask(`${text}\n\n---\n原文 ${text.length} 字，速览请控制在 ${budget} 字以内。${language}`, sessionId, options, signal)
     if (first.text.length <= budget * 1.5) return first
     /** The model ignored the budget: say it once more with the draft in hand. */
     let second
     try {
       second = await ask(
-        `下面这段已经压过一遍，但还有 ${first.text.length} 字，超过 ${budget} 字的上限。再压一遍：只留结论、必要步骤和风险，关键数字和命令不能丢。\n\n${first.text}`,
+        `下面这段已经压过一遍，但还有 ${first.text.length} 字，超过 ${budget} 字的上限。再压一遍：只留结论、必要步骤和风险，关键数字和命令不能丢。${language}\n\n${first.text}`,
         sessionId, options, signal,
       )
     } catch {
@@ -485,9 +505,9 @@ export function apply(ctx, config) {
   async function resolve(sessionId, seq, force, auto, signal) {
     /** The settings this request runs with, taken once so the key and the call agree. */
     const options = settings()
-    // The model and the length tier are part of the key: after a live switch,
-    // work done with the old ones is neither served nor joined.
-    const key = `${options.provider}/${options.model}/${options.length}:${sessionId}:${seq}`
+    // The model, the length tier and the language are part of the key: after a
+    // live switch, work done with the old ones is neither served nor joined.
+    const key = `${options.provider}/${options.model}/${options.length}/${options.language}:${sessionId}:${seq}`
     if (force !== true && cache.has(key)) return cache.get(key)
     const joined = running.get(key)
     // Work everyone has already walked away from is being torn down; start afresh.
@@ -701,6 +721,7 @@ export function apply(ctx, config) {
           mode: MODES.includes(options.mode) ? options.mode : DEFAULTS.mode,
           sessions: Array.isArray(options.sessions) ? options.sessions.filter((id) => typeof id === 'string') : [],
           length: LENGTH_TIERS.includes(options.length) ? options.length : DEFAULTS.length,
+          language: LANGUAGES.includes(options.language) ? options.language : DEFAULTS.language,
           live,
           /** What the guard has to work with: spent today, and the ceiling. */
           tokensToday: Math.round(spentToday()),
@@ -754,6 +775,13 @@ export function apply(ctx, config) {
         }
         next.length = body.length
       }
+      if (body?.language !== undefined) {
+        if (!LANGUAGES.includes(body.language)) {
+          reply(res, 400, { status: 'error', message: `language must be one of ${LANGUAGES.join(', ')}` })
+          return
+        }
+        next.language = body.language
+      }
       /** Each block holds its own copy of the list, so it sends changes, never the whole list. */
       const sessionLists = {}
       for (const field of ['sessions', 'addSessions', 'removeSessions']) {
@@ -785,6 +813,7 @@ export function apply(ctx, config) {
         mode: MODES.includes(after.mode) ? after.mode : DEFAULTS.mode,
         sessions: Array.isArray(after.sessions) ? after.sessions : [],
         length: LENGTH_TIERS.includes(after.length) ? after.length : DEFAULTS.length,
+        language: LANGUAGES.includes(after.language) ? after.language : DEFAULTS.language,
       })
     },
   }), 'interpreter: config route')

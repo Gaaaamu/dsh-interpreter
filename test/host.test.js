@@ -11,7 +11,7 @@ const LONG = 'x'.repeat(600)
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** The fields index.js declares `.volatile()` in its Config. */
-const LIVE_FIELDS = ['provider', 'model', 'mode', 'sessions', 'length', 'autoSince']
+const LIVE_FIELDS = ['provider', 'model', 'mode', 'sessions', 'length', 'language', 'autoSince']
 
 /** The marker and writer of DSH's live config references (cosmokit's shared protocol). */
 const WRITE = Symbol.for('cosmokit.volatile.write')
@@ -378,6 +378,7 @@ test('bad config bodies are refused', async () => {
   assert.equal((await h.config({ addSessions: [1] }).done).status, 'error')
   assert.equal((await h.config({ provider: 'p', model: 'nope' }).done).status, 'error')
   assert.equal((await h.config({ length: 'medium' }).done).status, 'error')
+  assert.equal((await h.config({ language: 'fr' }).done).status, 'error')
   assert.equal((await h.config({}).done).status, 'error')
   await h.cleanup()
 })
@@ -481,6 +482,48 @@ test('the gate reports the length tier', async () => {
   assert.equal(saved.status, 'ok')
   assert.equal(saved.length, 'detailed')
   assert.equal((await h.send('/interpreter/config', undefined, 'GET').done).length, 'detailed')
+  await h.cleanup()
+})
+
+test('a fixed language is said in the request, and each language keeps its own rewrite', async () => {
+  const prompts = []
+  const echo = async function* (request, call) {
+    prompts.push(request.messages[0].content[0].text)
+    yield { type: 'text-delta', text: `draft ${call}` }
+    yield { type: 'usage', usage: { inputTokens: 10, outputTokens: 5 } }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }
+  const h = await host(echo, { live: true })
+  h.setLog([answer()])
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  // 跟随回答 leaves the prompt's own rule alone: no sentence is added.
+  assert.doesNotMatch(prompts[0], /速览一律用/)
+  assert.equal((await h.config({ language: 'zh' }).done).status, 'ok')
+  assert.equal(h.state.restarts, 0)
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.match(prompts[1], /速览一律用中文写/)
+  await h.config({ language: 'en' }).done
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.match(prompts[2], /速览一律用英文写/)
+  // Each language remembers its own answer: going back is a cache hit, not a bill.
+  await h.config({ language: 'zh' }).done
+  assert.equal((await h.rewrite({ sessionId: 's', seq: 1 }).done).text, 'draft 2')
+  await h.config({ language: 'auto' }).done
+  assert.equal((await h.rewrite({ sessionId: 's', seq: 1 }).done).text, 'draft 1')
+  assert.equal(h.state.calls, 3)
+  await h.cleanup()
+})
+
+test('the gate reports the language, and refuses one it does not know', async () => {
+  const h = await host(answers('ok'), { live: true })
+  assert.equal((await h.send('/interpreter/config', undefined, 'GET').done).language, 'auto')
+  const saved = await h.config({ language: 'en' }).done
+  assert.equal(saved.status, 'ok')
+  assert.equal(saved.language, 'en')
+  assert.equal((await h.send('/interpreter/config', undefined, 'GET').done).language, 'en')
+  const refused = await h.config({ language: 'fr' }).done
+  assert.equal(refused.status, 'error')
+  assert.match(refused.message, /language must be one of/)
   await h.cleanup()
 })
 
