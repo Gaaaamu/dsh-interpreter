@@ -2,6 +2,8 @@
 
 Appends a 「速览」 block below each assistant reply: conclusion first, about a third of the original length, with numbers, code, paths, and commands kept verbatim. The rewrite runs beside the conversation—the main model's system prompt and context stay untouched.
 
+Project page: [GitHub](https://github.com/Gaaaamu/dsh-interpreter)
+
 ## Using it
 
 - **Manual (default)**: a reply long enough shows a single 「› 速览」 row. Click it to generate; nothing is spent until you click.
