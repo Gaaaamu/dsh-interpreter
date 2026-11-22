@@ -9,7 +9,7 @@ Appends a 「速览」 block below each assistant reply: conclusion first, about
 - **Model**: 「模型」 lists the providers and models configured in DSH. No model is bundled, and nothing is generated until you pick one.
 - Folded, the block is one row: 「› 速览 · first sentence」. Expanded, the bottom-right corner shows the tokens this rewrite cost, copies the whole Markdown, and discards the result to redo it.
 
-![Condensed view block: one conclusion line and four bullets, mode and model controls top right, token count and copy button bottom right](images/preview-block.png)
+![Condensed view block: one conclusion line and a few short bullets, mode and model controls top right, token count and copy button bottom right](images/preview-block.png)
 
 ## When it appears
 
