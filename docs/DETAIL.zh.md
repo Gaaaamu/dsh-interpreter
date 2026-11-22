@@ -2,7 +2,7 @@
 
 在每条助手回答下方追加一块「速览」：结论先行，长度约为原文的三分之一，数字、代码、路径、命令原样保留。改写走旁路，主对话的系统提示词和上下文不变。
 
-项目主页：[GitHub](https://github.com/Gaaaamu/dsh-interpreter)
+项目主页：[dsh-interpreter](https://github.com/Gaaaamu/dsh-interpreter)
 
 ## 用起来
 
