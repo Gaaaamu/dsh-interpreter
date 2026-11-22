@@ -64,6 +64,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 | `capChars` | `900` | 速览自身的字数上限：按 `ratio` 换算出的目标超过它时，按它算（短回答仍至少留 150 字） |
 | `temperature` | `0.3` | 摘要生成的采样温度 |
 | `prompt` | 内置 | 摘要改写指令，可通过自定义指令调整输出风格 |
+| `dailyTokenCap` | `0` | 自动模式每天最多花掉的 tokens（按本机自然日算，插件重启后清零），`0` 表示不限。到额度后只是不再自动整理，手动点「速览」不受限制 |
 
 ### 模型选择建议
 
@@ -72,6 +73,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 ### 费用与隐私说明
 
 * **计费与缓存**：每次生成对应一次模型调用；若首次生成结果超出字数预算的 1.5 倍，插件会基于草稿自动执行二次压缩（界面显示的 Token 数为两次调用之和）。生成结果按「模型 + 会话 + 轮次序号」缓存，重复展开不重复计费；换了模型会按新模型重新生成，切回原来的模型时，之前的结果仍然有效。
+* **自动模式费用护栏**：给 `dailyTokenCap` 设一个大于 0 的值后，插件会记下当天自己花掉的 Token 数，自动整理花到额度就停下，在这一轮留下一行提示，点开可看用量并手动生成；手动点击不受额度限制，第二天自动恢复。计数只在内存里，重启 DSH 或插件后从零开始，所以它是防跑飞的刹车，不是精确账单。
 * **数据边界**：除将当前轮次已生成的回答发送至用户所选的摘要模型接口外，不向任何第三方上传数据。
 
 ### 开发
@@ -168,6 +170,7 @@ Parameters can be tuned in **the profile directory's** `cordis.patch.yml`, under
 | `capChars` | `900` | Ceiling on the summary's own length: when the ratio's share exceeds it, the ceiling wins (short answers still keep at least 150 characters) |
 | `temperature` | `0.3` | Sampling temperature for the rewrite call |
 | `prompt` | Built-in | Custom rewrite instruction to adjust the output style |
+| `dailyTokenCap` | `0` | Tokens automatic mode may spend per local day (`0` = no ceiling; the count resets when the plugin restarts). Over it, automation stops but manual clicks still generate |
 
 ### Model Selection
 
@@ -176,6 +179,7 @@ Effective summarization relies on **explanatory clarity and information restruct
 ### Cost & Privacy
 
 * **Billing & Caching**: Each rewrite is a standalone model call. If the initial draft exceeds 1.5× the target length budget, a second compression pass is executed automatically (the displayed token usage reflects the sum of both calls). Results are cached by model, session and sequence number; reopening a block is free, a new model rewrites afresh, and switching back to a previous model reuses its results.
+* **Automatic-Mode Guard**: With `dailyTokenCap` above 0, the plugin counts the tokens its own rewrites spend today and stops automatic rewriting at the ceiling, leaving one line in that turn that opens into the usage and a manual generate action. Manual clicks are never capped, and tomorrow starts afresh. The count lives in memory and restarts from zero with the plugin, so it is a runaway brake, not a bill.
 * **Data Boundary**: No data is uploaded anywhere except sending the finalized turn response to your configured rewrite provider.
 
 ### Development

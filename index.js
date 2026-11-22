@@ -84,6 +84,9 @@ const DEFAULTS = {
   /** Answers longer than this are left alone instead of rewritten. */
   maxChars: 40000,
   prompt: DEFAULT_PROMPT,
+  /** Tokens automatic 速览 may spend per local day; 0 means no ceiling. A manual
+   * click still goes through, so the guard stops a runaway mode, not the reader. */
+  dailyTokenCap: 0,
 }
 
 /** Services required before the route can be installed. */
@@ -117,6 +120,9 @@ export const Config = z === undefined ? undefined : z.object({
   minChars: z.number(),
   maxChars: z.number(),
   prompt: z.string(),
+  /** Ordinary, not live: the ceiling changes by editing the row, and the count
+   * it guards starts over with the restart that edit causes. */
+  dailyTokenCap: z.number(),
 })
 
 /** The marker DSH's live config references carry (shared across library copies). */
@@ -249,6 +255,42 @@ export function apply(ctx, config) {
   const autoSince = () => {
     const since = settings().autoSince
     return Math.max(startedAt, typeof since === 'number' ? since : 0)
+  }
+
+  /** The reader's local date, the key today's spend resets on: a day boundary
+   * should follow their calendar rather than UTC. */
+  function today() {
+    const now = new Date()
+    return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`
+  }
+
+  /**
+   * Tokens this instance's own rewrites have spent today. In memory only: a
+   * restart starts the day over, so the guard is a runaway brake, not a bill.
+   */
+  const spend = { day: today(), tokens: 0 }
+
+  /** Today's spend, reset once the local date has turned over. */
+  function spentToday() {
+    const day = today()
+    if (spend.day !== day) {
+      spend.day = day
+      spend.tokens = 0
+    }
+    return spend.tokens
+  }
+
+  /** Add what one rewrite cost, both passes included, to today's total. */
+  function recordSpend(usage) {
+    spentToday()
+    const total = typeof usage?.totalTokens === 'number' ? usage.totalTokens : 0
+    if (total > 0) spend.tokens += total
+  }
+
+  /** The daily ceiling in force, in tokens; 0 means no ceiling. */
+  function dailyCap(options) {
+    const cap = options.dailyTokenCap
+    return typeof cap === 'number' && cap > 0 ? Math.round(cap) : 0
   }
 
   /** Rewrite results, including the decisions not to rewrite. */
@@ -438,6 +480,13 @@ export function apply(ctx, config) {
       if (answer !== undefined && !(typeof answer.time === 'number' && answer.time >= autoSince())) {
         return { status: 'skip', reason: 'history' }
       }
+      // The fee guard: automatic rewriting stops once today's own spend reaches
+      // the ceiling. Checked before any work is scheduled, and never cached, so
+      // a hand-clicked Turn still goes through and tomorrow starts afresh.
+      const cap = dailyCap(options)
+      if (cap > 0 && spentToday() >= cap) {
+        return { status: 'skip', reason: 'budget', used: Math.round(spentToday()), cap }
+      }
     }
     const controller = new AbortController()
     const work = (async () => {
@@ -453,6 +502,7 @@ export function apply(ctx, config) {
         // The reader meets this once, then picks a model from the block itself.
         if (options.provider === '' || options.model === '') return { status: 'error', message: 'no configured model' }
         const outcome = await limited(shared, () => rewrite(text, sessionId, options, shared))
+        recordSpend(outcome.usage)
         return { status: 'ok', text: outcome.text, usage: outcome.usage }
       } catch (error) {
         return { status: 'error', message: error instanceof Error ? error.message : String(error) }
@@ -628,6 +678,9 @@ export function apply(ctx, config) {
           mode: MODES.includes(options.mode) ? options.mode : DEFAULTS.mode,
           sessions: Array.isArray(options.sessions) ? options.sessions.filter((id) => typeof id === 'string') : [],
           live,
+          /** What the guard has to work with: spent today, and the ceiling. */
+          tokensToday: Math.round(spentToday()),
+          tokenCap: dailyCap(options),
         })
         return
       }

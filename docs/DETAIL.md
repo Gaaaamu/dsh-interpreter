@@ -23,6 +23,7 @@ Project page: [dsh-interpreter](https://github.com/Gaaaamu/dsh-interpreter)
 - Each generation is one model call. If the result exceeds the target length by 1.5×, the draft is condensed once more and both calls' tokens are shown.
 - Results are cached per session, turn, and model: expanding again costs nothing, switching models regenerates.
 - Only the reply already stored for this turn is sent to the model you picked. Nothing is uploaded elsewhere, the original reply is not modified, and the session log gains no events.
+- With `dailyTokenCap` set, automatic rewriting stops once today's own spend reaches the ceiling and leaves one line in the block; clicking 「速览」 by hand is never capped, and tomorrow starts afresh. The count lives in memory only and resets with the plugin: it is a runaway brake, not a bill.
 
 ## Configuration
 
@@ -36,3 +37,4 @@ In the profile's `cordis.patch.yml`, under the `- id: interpreter` row's `config
 | `capChars` | `900` | Upper bound for the condensed length |
 | `temperature` | `0.3` | Sampling temperature |
 | `prompt` | built in | The rewrite instruction; change it to change the style |
+| `dailyTokenCap` | `0` | Tokens automatic mode may spend per local day; `0` means no ceiling. Over it, automation stops but manual clicks still generate |

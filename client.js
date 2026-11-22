@@ -34,6 +34,8 @@ window.__ModuleLoader__.load({
     };
     /** The name of this block; renaming the feature starts and ends here. */
     const NAME = '速览';
+    /** The folded line a budget stop leaves behind: short, and never a card. */
+    const BUDGET_NOTE = '今日额度已用完';
     /** Same measure as the answer above: a narrower column reads as a cramped box. */
     const BODY = { marginTop: 14 };
     /** An untouched Turn in manual mode only offers the entry point: no card, no paint. */
@@ -1031,6 +1033,13 @@ window.__ModuleLoader__.load({
               setOpen(false);
               return;
             }
+            if (result.status === 'skip' && result.reason === 'budget') {
+              // Today's automatic spend is spent: one folded line, no card, and a
+              // click opens the explanation rather than spending again.
+              setPhase({ kind: 'budget', used: result.used, cap: result.cap });
+              setOpen(false);
+              return;
+            }
             if (result.status === 'ok') setPhase({ kind: 'ready', text: result.text, usage: result.usage });
             else if (result.status === 'skip') setPhase({ kind: result.reason === 'too-long' ? 'toolong' : 'none' });
             else setPhase({ kind: 'failed', message: readableError(result.message ?? '') });
@@ -1047,15 +1056,19 @@ window.__ModuleLoader__.load({
       // says so, and until it has said so there is no entry to flash up and away.
       if (!usable) return null;
       if (!started && offered !== true) return null;
+      // A budget stop belongs to automation: with automation off, the Turn waits
+      // for a click like any other and leaves no line behind meanwhile.
+      if (phase.kind === 'budget' && !started) return null;
       // Automatic mode keeps a short answer out of the way; a hand-opened block
       // says why it stayed empty instead of vanishing under the reader's finger.
       const quiet = phase.kind === 'none';
       if (quiet && !wanted) return null;
 
       const ready = phase.kind === 'ready';
+      const spent = phase.kind === 'budget';
       const shown = started && open;
       // Folded, the head carries the conclusion itself: the click is only for the rest.
-      const folded = shown || !ready ? '' : headline(parsed);
+      const folded = shown ? '' : spent ? BUDGET_NOTE : ready ? headline(parsed) : '';
       if (shown) ensureStyle();
       const body = [];
       if (phase.kind === 'loading') {
@@ -1074,6 +1087,15 @@ window.__ModuleLoader__.load({
               h('span', { className: 'ra-dot2' }, '.'),
               h('span', { className: 'ra-dot3' }, '.')))));
       } else if (phase.kind === 'toolong') body.push(h('div', { key: 'long', style: MUTED }, '原文太长，这次没有整理'));
+      else if (spent) {
+        body.push(h('div', { key: 'spend', style: MUTED },
+          `今天自动速览已用 ${formatTokens(phase.used)} / ${formatTokens(phase.cap)} tokens，自动整理先停下，明天恢复。`));
+        body.push(h('button', {
+          key: 'now',
+          style: ACTION,
+          onClick: () => { setWanted(true); setAttempt((n) => n + 1); },
+        }, '现在整理这一条'));
+      }
       else if (quiet) body.push(h('div', { key: 'short', style: MUTED }, '这条没什么可压的'));
       else if (phase.kind === 'failed') {
         body.push(h('div', { key: 'fail', style: MUTED }, `整理失败：${phase.message}`));
@@ -1170,7 +1192,9 @@ window.__ModuleLoader__.load({
           modeOpen ? h('div', { style: cardStyle(), onClick: (event) => event.stopPropagation() }, items) : null);
       }
 
-      return h('section', { style: started ? CARD : BARE },
+      // A budget stop collapsed is only a line in the page, like an untouched
+      // Turn; opening it brings back the card the explanation deserves.
+      return h('section', { style: started && !(spent && !shown) ? CARD : BARE },
         h('div', { style: HEAD },
           h('button', {
             style: DISCLOSURE,

@@ -423,6 +423,26 @@ test('switching automation on live starts its clock at the switch', async () => 
   await h.cleanup()
 })
 
+test('the daily ceiling stops automatic rewrites but not a hand click', async () => {
+  // 每次改写花 15 tokens，上限 20：第二次自动整理越过线，第三次被拦下。
+  const h = await host(answers('ok'), { config: { dailyTokenCap: 20 } })
+  const write = async (sessionId, seq, auto) => {
+    h.setLog([answer(Date.now() + 1000)])
+    return h.rewrite({ sessionId, seq, auto }).done
+  }
+  assert.equal((await write('a', 1, true)).status, 'ok')
+  assert.equal((await write('a', 2, true)).status, 'ok')
+  assert.deepEqual(await write('a', 3, true), { status: 'skip', reason: 'budget', used: 30, cap: 20 })
+  assert.equal(h.state.calls, 2)
+  // A hand click is the reader asking, so the ceiling does not apply to it.
+  assert.equal((await write('b', 1, false)).status, 'ok')
+  assert.equal(h.state.calls, 3)
+  const gate = await h.send('/interpreter/config', undefined, 'GET').done
+  assert.equal(gate.tokensToday, 45)
+  assert.equal(gate.tokenCap, 20)
+  await h.cleanup()
+})
+
 test('a live allow-list change merges with the row as it is now', async () => {
   const h = await host(answers('ok'), { live: true })
   await Promise.all([
