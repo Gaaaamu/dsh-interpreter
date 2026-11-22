@@ -23,6 +23,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 * **原生样式融合**：排版、字号、代码块、表格与链接样式直接复用 DSH 主题变量，随宿主主题与字号设置同步变化；右下角实时显示本次摘要消耗的 Token 数量（悬停可查看输入 / 输出明细）。
 * **入口只在有用时出现**：短回答、纯工具轮次、没有正文的轮次不再显示「› 速览」，省得点开只看到一句「这条没什么可压的」；判定在 Host 侧做，一次本地请求、不调模型。
 * **一键带走**：速览右下角的复制按钮把整段 Markdown 原文放进剪贴板，粘贴到笔记、工单或聊天里不丢格式；点完图标本身变成一个勾，一秒多后自己变回来，不会多出一行字把 token 花费挤开。
+* **长度随手调**：区块右上角的「简短 / 适中 / 详细」三档快切，改了就按新档重写当前这块，其他块跟着改设置；三档各自缓存，来回切换不重复计费。
 
 ### 安装与使用
 
@@ -39,7 +40,8 @@ Generates an independent "Condensed View" summary block below each DSH response,
 #### 2. 首次配置与运行模式
 插件安装后默认处于**手动模式**，不会自动触发调用产生费用：
 1. 点击回答下方的「› 速览」展开区块，在右上角「模型」下拉菜单中选择当前环境中可用的 `provider / model`。
-2. 根据使用习惯切换运行模式（选择存进**当前 Profile 目录下**的 `cordis.patch.yml`，即其中 `- id: interpreter` 那一行的 `config`，由界面经 DSH 的配置接口写回。模型、模式和白名单是 DSH 的 live 字段，保存后就地生效，插件不重启，正在生成的速览不受影响）：
+2. 需要控制篇幅时，用旁边的「简短 / 适中 / 详细」切换长度档位；这是本机偏好，存进同一个 `config`。
+3. 根据使用习惯切换运行模式（选择存进**当前 Profile 目录下**的 `cordis.patch.yml`，即其中 `- id: interpreter` 那一行的 `config`，由界面经 DSH 的配置接口写回。模型、模式、长度档位和白名单是 DSH 的 live 字段，保存后就地生效，插件不重启，正在生成的速览不受影响）：
 
 | 模式 | 行为说明 |
 | :--- | :--- |
@@ -62,6 +64,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 | `maxChars` | `40000` | 触发摘要的最大字符数，超出该长度的回答将被跳过 |
 | `ratio` | `0.35` | 摘要目标字数占原文长度的比例 |
 | `capChars` | `900` | 速览自身的字数上限：按 `ratio` 换算出的目标超过它时，按它算（短回答仍至少留 150 字） |
+| `length` | `normal` | 长度档位：`short`（简短）/ `normal`（适中）/ `detailed`（详细）。`short` 与 `detailed` 自带比例和上限（0.25 / 600、0.5 / 1600），覆盖 `ratio`、`capChars`；`normal` 用配置里的值 |
 | `temperature` | `0.3` | 摘要生成的采样温度 |
 | `prompt` | 内置 | 摘要改写指令，可通过自定义指令调整输出风格 |
 | `dailyTokenCap` | `0` | 自动模式每天最多花掉的 tokens（按本机自然日算，插件重启后清零），`0` 表示不限。到额度后只是不再自动整理，手动点「速览」不受限制 |
@@ -72,7 +75,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 
 ### 费用与隐私说明
 
-* **计费与缓存**：每次生成对应一次模型调用；若首次生成结果超出字数预算的 1.5 倍，插件会基于草稿自动执行二次压缩（界面显示的 Token 数为两次调用之和）。生成结果按「模型 + 会话 + 轮次序号」缓存，重复展开不重复计费；换了模型会按新模型重新生成，切回原来的模型时，之前的结果仍然有效。
+* **计费与缓存**：每次生成对应一次模型调用；若首次生成结果超出字数预算的 1.5 倍，插件会基于草稿自动执行二次压缩（界面显示的 Token 数为两次调用之和）。生成结果按「模型 + 会话 + 轮次序号 + 长度档位」缓存，重复展开不重复计费；换了模型或档位会重新生成，切回原来的组合时，之前的结果仍然有效。
 * **自动模式费用护栏**：给 `dailyTokenCap` 设一个大于 0 的值后，插件会记下当天自己花掉的 Token 数，自动整理花到额度就停下，在这一轮留下一行提示，点开可看用量并手动生成；手动点击不受额度限制，第二天自动恢复。计数只在内存里，重启 DSH 或插件后从零开始，所以它是防跑飞的刹车，不是精确账单。
 * **数据边界**：除将当前轮次已生成的回答发送至用户所选的摘要模型接口外，不向任何第三方上传数据。
 
@@ -129,6 +132,7 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 * **Native UI Integration**: Typography, inline-code chips, tables, and link styles inherit directly from DSH theme tokens. A token counter in the bottom-right corner reports the exact cost of each rewrite (hover for input / output / total breakdown).
 * **An Entry Only Where It Helps**: Short answers, tool-only turns, and turns without prose get no 「› 速览」 line, so clicking never lands on "nothing to condense"; the Host decides, with one local request and no model call.
 * **Take It With You**: A copy button in the summary's bottom-right corner puts the whole Markdown on the clipboard, formatting intact for a note, an issue, or a chat message; the icon itself turns into a check for a moment and then back, so no text pushes the token count aside.
+* **Length On Tap**: 「简短 / 适中 / 详细」 in the block's top-right corner switches tier in one click; the current block is rewritten at the new size and other blocks follow the setting. Each tier keeps its own cache, so switching back and forth costs nothing.
 
 ### Installation & Usage
 
@@ -145,7 +149,8 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 #### 2. Initial Setup & Modes
 The plugin defaults to **Manual** mode so no calls are made automatically upon installation:
 1. Click "› 速览" below a response and open the "模型" (Model) menu to select an available `provider / model` exposed by `ctx.llm`.
-2. Switch modes as needed (the choice lives in **the profile directory's** `cordis.patch.yml`, in the `config` of its `- id: interpreter` row, written back by the UI through DSH's config API. Model, mode and allow-list are DSH live fields: a save takes effect in place without restarting the plugin, so rewrites in progress are not interrupted):
+2. Use 「简短 / 适中 / 详细」 next to it to pick a length tier; the choice is a local preference and lands in the same `config`.
+3. Switch modes as needed (the choice lives in **the profile directory's** `cordis.patch.yml`, in the `config` of its `- id: interpreter` row, written back by the UI through DSH's config API. Model, mode, length tier and allow-list are DSH live fields: a save takes effect in place without restarting the plugin, so rewrites in progress are not interrupted):
 
 | Mode | Behavior |
 | :--- | :--- |
@@ -168,6 +173,7 @@ Parameters can be tuned in **the profile directory's** `cordis.patch.yml`, under
 | `maxChars` | `40000` | Maximum character count eligible for summarization |
 | `ratio` | `0.35` | Target summary length as a ratio of the original response |
 | `capChars` | `900` | Ceiling on the summary's own length: when the ratio's share exceeds it, the ceiling wins (short answers still keep at least 150 characters) |
+| `length` | `normal` | Length tier: `short` / `normal` / `detailed`. `short` and `detailed` carry their own ratio and ceiling (0.25 / 600, 0.5 / 1600) and override `ratio` and `capChars`; `normal` uses the configured values |
 | `temperature` | `0.3` | Sampling temperature for the rewrite call |
 | `prompt` | Built-in | Custom rewrite instruction to adjust the output style |
 | `dailyTokenCap` | `0` | Tokens automatic mode may spend per local day (`0` = no ceiling; the count resets when the plugin restarts). Over it, automation stops but manual clicks still generate |
@@ -178,7 +184,7 @@ Effective summarization relies on **explanatory clarity and information restruct
 
 ### Cost & Privacy
 
-* **Billing & Caching**: Each rewrite is a standalone model call. If the initial draft exceeds 1.5× the target length budget, a second compression pass is executed automatically (the displayed token usage reflects the sum of both calls). Results are cached by model, session and sequence number; reopening a block is free, a new model rewrites afresh, and switching back to a previous model reuses its results.
+* **Billing & Caching**: Each rewrite is a standalone model call. If the initial draft exceeds 1.5× the target length budget, a second compression pass is executed automatically (the displayed token usage reflects the sum of both calls). Results are cached by model, session, sequence number and length tier; reopening a block is free, a new model or tier rewrites afresh, and switching back to a previous combination reuses its results.
 * **Automatic-Mode Guard**: With `dailyTokenCap` above 0, the plugin counts the tokens its own rewrites spend today and stops automatic rewriting at the ceiling, leaving one line in that turn that opens into the usage and a manual generate action. Manual clicks are never capped, and tomorrow starts afresh. The count lives in memory and restarts from zero with the plugin, so it is a runaway brake, not a bill.
 * **Data Boundary**: No data is uploaded anywhere except sending the finalized turn response to your configured rewrite provider.
 

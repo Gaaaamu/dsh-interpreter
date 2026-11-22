@@ -21,6 +21,9 @@ const CONFIG_PATH = '/interpreter/config'
 /** The three ways a new answer can get a 速览. */
 const MODES = ['global', 'session', 'manual']
 
+/** The length tiers the block offers, shortest first. */
+const LENGTH_TIERS = ['short', 'normal', 'detailed']
+
 /** Largest request body accepted from the page, in bytes. */
 const MAX_BODY_BYTES = 4096
 
@@ -38,6 +41,17 @@ const MAX_CONCURRENT_REWRITES = 2
  * would otherwise come out below what a usable 速览 needs.
  */
 const MIN_BUDGET = 150
+
+/**
+ * The three length tiers the block can switch between without a restart. The
+ * two ends replace the configured `ratio`/`capChars`; 适中 keeps them, so a
+ * reader who never touches the switch sees exactly what the row says.
+ */
+const LENGTHS = {
+  short: { ratio: 0.25, capChars: 600 },
+  normal: undefined,
+  detailed: { ratio: 0.5, capChars: 1600 },
+}
 
 /** Default rewrite instruction; overridable through `config.prompt`. */
 const DEFAULT_PROMPT = `你把技术回答改写成「速览」。读者聪明但不熟悉这块，他只想知道：结论是什么、要不要动手、动手做什么、有什么坑。
@@ -73,6 +87,9 @@ const DEFAULTS = {
   /** Ceiling on that target, in characters: a share of a long answer would
    * otherwise still buy a long summary. */
   capChars: 900,
+  /** 简短 / 适中 / 详细, switched in the block. 适中 (the default) uses the
+   * configured ratio and ceiling; the two ends override them for this reader. */
+  length: 'normal',
   /** When a new answer gets a 速览: 'global' every answer, 'session' the listed
    * Sessions only, 'manual' nothing until the reader asks. Manual is the
    * default so that installing the bundle spends nothing on its own. */
@@ -112,6 +129,8 @@ export const Config = z === undefined ? undefined : z.object({
   model: z.string().volatile(),
   mode: z.string().volatile(),
   sessions: z.array(z.string()).volatile(),
+  /** Picked in the block; live so switching it costs no restart and no cache. */
+  length: z.string().volatile(),
   /** When automation was last switched on or widened, in epoch milliseconds. */
   autoSince: z.number().volatile(),
   temperature: z.number(),
@@ -409,8 +428,12 @@ export function apply(ctx, config) {
    * @param options - the settings in force for this call.
    */
   function budgetOf(length, options) {
-    const ratio = typeof options.ratio === 'number' && options.ratio > 0 && options.ratio < 1 ? options.ratio : DEFAULTS.ratio
-    const cap = typeof options.capChars === 'number' && options.capChars > 0 ? options.capChars : DEFAULTS.capChars
+    /** 简短 and 详细 replace the row's numbers; 适中 keeps them. */
+    const tier = LENGTHS[options.length]
+    const wantedRatio = tier?.ratio ?? options.ratio
+    const wantedCap = tier?.capChars ?? options.capChars
+    const ratio = typeof wantedRatio === 'number' && wantedRatio > 0 && wantedRatio < 1 ? wantedRatio : DEFAULTS.ratio
+    const cap = typeof wantedCap === 'number' && wantedCap > 0 ? wantedCap : DEFAULTS.capChars
     /** A concrete number works better than "be shorter". */
     const share = Math.round(length * ratio)
     return Math.min(Math.max(MIN_BUDGET, share), Math.max(MIN_BUDGET, Math.round(cap)))
@@ -462,9 +485,9 @@ export function apply(ctx, config) {
   async function resolve(sessionId, seq, force, auto, signal) {
     /** The settings this request runs with, taken once so the key and the call agree. */
     const options = settings()
-    // The model is part of the key: after a live switch, work done with the old
-    // model is neither served nor joined.
-    const key = `${options.provider}/${options.model}:${sessionId}:${seq}`
+    // The model and the length tier are part of the key: after a live switch,
+    // work done with the old ones is neither served nor joined.
+    const key = `${options.provider}/${options.model}/${options.length}:${sessionId}:${seq}`
     if (force !== true && cache.has(key)) return cache.get(key)
     const joined = running.get(key)
     // Work everyone has already walked away from is being torn down; start afresh.
@@ -677,6 +700,7 @@ export function apply(ctx, config) {
           status: 'ok',
           mode: MODES.includes(options.mode) ? options.mode : DEFAULTS.mode,
           sessions: Array.isArray(options.sessions) ? options.sessions.filter((id) => typeof id === 'string') : [],
+          length: LENGTH_TIERS.includes(options.length) ? options.length : DEFAULTS.length,
           live,
           /** What the guard has to work with: spent today, and the ceiling. */
           tokensToday: Math.round(spentToday()),
@@ -723,6 +747,13 @@ export function apply(ctx, config) {
         }
         next.mode = body.mode
       }
+      if (body?.length !== undefined) {
+        if (!LENGTH_TIERS.includes(body.length)) {
+          reply(res, 400, { status: 'error', message: `length must be one of ${LENGTH_TIERS.join(', ')}` })
+          return
+        }
+        next.length = body.length
+      }
       /** Each block holds its own copy of the list, so it sends changes, never the whole list. */
       const sessionLists = {}
       for (const field of ['sessions', 'addSessions', 'removeSessions']) {
@@ -753,6 +784,7 @@ export function apply(ctx, config) {
         // The row's own value answers when this request did not set the mode.
         mode: MODES.includes(after.mode) ? after.mode : DEFAULTS.mode,
         sessions: Array.isArray(after.sessions) ? after.sessions : [],
+        length: LENGTH_TIERS.includes(after.length) ? after.length : DEFAULTS.length,
       })
     },
   }), 'interpreter: config route')

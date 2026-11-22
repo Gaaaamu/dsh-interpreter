@@ -205,6 +205,13 @@ window.__ModuleLoader__.load({
       { value: 'session', label: '本会话' },
       { value: 'manual', label: '手动' },
     ];
+    /** How long the 速览 should be, in the same three words the Host stores. */
+    const LENGTH_LABEL = { short: '简短', normal: '适中', detailed: '详细' };
+    const LENGTH_MENU = [
+      { value: 'short', label: '简短' },
+      { value: 'normal', label: '适中' },
+      { value: 'detailed', label: '详细' },
+    ];
     /** Anchors a menu card to the control that opens it. */
     const PICKER = { position: 'relative', display: 'inline-flex' };
     const TRIGGER = {
@@ -601,10 +608,10 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Change the mode and the allow-list. Only the change travels, never the
-     * whole list: every block holds its own copy, and a stale copy sent back
-     * would wipe out what another block added.
-     * @param change - `{ mode?, addSessions?, removeSessions? }`.
+     * Change the mode, the allow-list or the length tier. Only the change
+     * travels, never the whole list: every block holds its own copy, and a stale
+     * copy sent back would wipe out what another block added.
+     * @param change - `{ mode?, addSessions?, removeSessions?, length? }`.
      */
     function saveGate(change) {
       return fetch(CONFIG, {
@@ -621,6 +628,14 @@ window.__ModuleLoader__.load({
     function effectiveMode(gate, sessionId) {
       if (gate.mode === 'session') return gate.sessions.includes(sessionId) ? 'session' : 'manual';
       return gate.mode === 'global' ? 'global' : 'manual';
+    }
+
+    /**
+     * The length tier a gate names, standing in with 适中 for anything else: an
+     * older Host, or a row written by hand in a newer vocabulary.
+     */
+    function effectiveLength(gate) {
+      return LENGTH_LABEL[gate?.length] === undefined ? 'normal' : gate.length;
     }
 
     /** 12431 is harder to take in at a glance than 12.4k. */
@@ -742,9 +757,9 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * The gate (mode and allow-list), read once for the whole page and shared by
-     * every block, so a long Session costs one request instead of one per Turn,
-     * and a change made in one block reaches the others.
+     * The gate (mode and allow-list) and the length tier, read once for the whole
+     * page and shared by every block, so a long Session costs one request instead
+     * of one per Turn, and a change made in one block reaches the others.
      */
     const gateStore = { value: null, failed: false, loading: false, listeners: new Set() };
 
@@ -760,14 +775,18 @@ window.__ModuleLoader__.load({
         .then((result) => {
           if (result.status !== 'ok') throw new Error(result.message ?? '读不到设置');
           gateStore.failed = false;
-          setSharedGate({ mode: result.mode, sessions: Array.isArray(result.sessions) ? result.sessions : [] });
+          setSharedGate({
+            mode: result.mode,
+            sessions: Array.isArray(result.sessions) ? result.sessions : [],
+            length: effectiveLength(result),
+          });
         })
         .catch(() => {
           // Unreadable settings must not start spending: stand in with the
           // default, a folded line that waits for a click, and let the next
           // block that mounts try again.
           gateStore.failed = true;
-          setSharedGate({ mode: 'manual', sessions: [] });
+          setSharedGate({ mode: 'manual', sessions: [], length: 'normal' });
         })
         .finally(() => { gateStore.loading = false; });
     }
@@ -857,6 +876,10 @@ window.__ModuleLoader__.load({
       const [modeOpen, setModeOpen] = useState(false);
       const [modeHover, setModeHover] = useState(null);
       const [modeError, setModeError] = useState('');
+      const [lenOpen, setLenOpen] = useState(false);
+      const [lenHover, setLenHover] = useState(null);
+      /** Bumped when the length tier changes: this block redoes its Turn at the new size. */
+      const [revision, setRevision] = useState(0);
       /** The catalog, read the first time the menu opens and kept afterwards. */
       const [models, setModels] = useState(null);
       const [choice, setChoice] = useState('');
@@ -930,6 +953,7 @@ window.__ModuleLoader__.load({
       const openModelMenu = (event) => {
         event.stopPropagation();
         setModeOpen(false);
+        setLenOpen(false);
         setPickerError('');
         setMenuUp(!fitsBelow(event.currentTarget, 270));
         setMenuOpen((open) => !open);
@@ -981,16 +1005,16 @@ window.__ModuleLoader__.load({
         let local;
         if (pick === 'global') {
           change = { mode: 'global' };
-          local = { mode: 'global', sessions: previous.sessions };
+          local = { ...previous, mode: 'global' };
         } else if (pick === 'session') {
           change = { mode: 'session', addSessions: [sessionId] };
-          local = { mode: 'session', sessions: [...new Set([...previous.sessions, sessionId])] };
+          local = { ...previous, mode: 'session', sessions: [...new Set([...previous.sessions, sessionId])] };
         } else if (previous.mode === 'session') {
           change = { removeSessions: [sessionId] };
-          local = { mode: 'session', sessions: previous.sessions.filter((id) => id !== sessionId) };
+          local = { ...previous, mode: 'session', sessions: previous.sessions.filter((id) => id !== sessionId) };
         } else {
           change = { mode: 'manual' };
-          local = { mode: 'manual', sessions: previous.sessions };
+          local = { ...previous, mode: 'manual' };
         }
         setSharedGate(local);
         saveGate(change)
@@ -1003,8 +1027,35 @@ window.__ModuleLoader__.load({
             if (!started && pick !== 'manual') setWanted(true);
             // The Host answers with the whole gate, other blocks' changes included.
             if (typeof result.mode === 'string' && Array.isArray(result.sessions)) {
-              setSharedGate({ mode: result.mode, sessions: result.sessions });
+              setSharedGate({
+                mode: result.mode,
+                sessions: result.sessions,
+                length: effectiveLength(result),
+              });
             }
+          })
+          .catch((error) => {
+            setSharedGate(previous);
+            setModeError(error instanceof Error ? error.message : String(error));
+          });
+      };
+
+      /**
+       * The length switch writes through like the mode, and every block follows.
+       * The block that was clicked redoes its own Turn so its text matches the
+       * new size; untouched Turns keep what they have until opened or refreshed,
+       * so one click never re-bills a whole Session. A tier this block already
+       * produced is still cached, so switching back and forth costs nothing.
+       */
+      const chooseLength = (pick) => {
+        setLenOpen(false);
+        setModeError('');
+        const previous = gate;
+        setSharedGate({ ...previous, length: pick });
+        saveGate({ length: pick })
+          .then((result) => {
+            if (result.status !== 'ok') throw new Error(result.message ?? '没保存上');
+            if (previous.length !== pick && started) setRevision((n) => n + 1);
           })
           .catch((error) => {
             setSharedGate(previous);
@@ -1014,11 +1065,11 @@ window.__ModuleLoader__.load({
 
       /** Clicking anywhere else folds the model list away. */
       useEffect(() => {
-        if (!menuOpen && !modeOpen) return undefined;
-        const close = () => { setMenuOpen(false); setModeOpen(false); };
+        if (!menuOpen && !modeOpen && !lenOpen) return undefined;
+        const close = () => { setMenuOpen(false); setModeOpen(false); setLenOpen(false); };
         document.addEventListener('click', close);
         return () => document.removeEventListener('click', close);
-      }, [menuOpen, modeOpen]);
+      }, [menuOpen, modeOpen, lenOpen]);
 
       useEffect(() => {
         if (!usable || !started) return undefined;
@@ -1048,7 +1099,7 @@ window.__ModuleLoader__.load({
             if (live) setPhase({ kind: 'failed', message: readableError(error instanceof Error ? error.message : String(error)) });
           });
         return () => { live = false; };
-      }, [usable, started, sessionId, seq, attempt]);
+      }, [usable, started, sessionId, seq, attempt, revision]);
 
       const parsed = useMemo(() => (phase.kind === 'ready' ? blocks(phase.text) : []), [phase]);
 
@@ -1184,12 +1235,43 @@ window.__ModuleLoader__.load({
               event.stopPropagation();
               // Two open cards would sit on top of each other; the mode wins.
               setMenuOpen(false);
+              setLenOpen(false);
               setMenuUp(!fitsBelow(event.currentTarget, 130));
               setModeOpen((open) => !open);
             },
           },
             h('span', { style: TRIGGER_TEXT }, MODE_LABEL[current] ?? '模式')),
           modeOpen ? h('div', { style: cardStyle(), onClick: (event) => event.stopPropagation() }, items) : null);
+      }
+
+      /** 「简短 / 适中 / 详细」: how much text a 速览 is worth, switched in place. */
+      let lengthControl = null;
+      if (gate !== null) {
+        const current = effectiveLength(gate);
+        const items = LENGTH_MENU.map((item) => menuRow(
+          item.value,
+          item.label,
+          item.value === current,
+          item.value === lenHover,
+          () => chooseLength(item.value),
+          () => setLenHover(item.value),
+          () => setLenHover(null),
+        ));
+        lengthControl = h('div', { style: PICKER },
+          h('button', {
+            style: TRIGGER,
+            title: '速览写多长',
+            onClick: (event) => {
+              event.stopPropagation();
+              // One card at a time: the switch that was just clicked owns the space.
+              setMenuOpen(false);
+              setModeOpen(false);
+              setMenuUp(!fitsBelow(event.currentTarget, 130));
+              setLenOpen((open) => !open);
+            },
+          },
+            h('span', { style: TRIGGER_TEXT }, LENGTH_LABEL[current])),
+          lenOpen ? h('div', { style: cardStyle(), onClick: (event) => event.stopPropagation() }, items) : null);
       }
 
       // A budget stop collapsed is only a line in the page, like an untouched
@@ -1218,6 +1300,7 @@ window.__ModuleLoader__.load({
           // Folded away, the head is only the name and the chevron; the switches
           // belong to the thing they switch, and come back with it.
           shown ? gateControl : null,
+          shown ? lengthControl : null,
           shown ? control : null),
         shown ? h('div', { style: BODY, className: 'ra-md' }, body) : null,
         shown && ready
@@ -1247,7 +1330,7 @@ window.__ModuleLoader__.load({
 
     // The test suite reaches the pure helpers through this hook; the app never sets it.
     if (typeof window.__DSH_INTERPRETER_TEST__ === 'function') {
-      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, renderBlock, readReply, headline, probeTurn, copyText });
+      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, renderBlock, readReply, headline, probeTurn, copyText });
     }
 
     return {

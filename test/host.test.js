@@ -11,7 +11,7 @@ const LONG = 'x'.repeat(600)
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** The fields index.js declares `.volatile()` in its Config. */
-const LIVE_FIELDS = ['provider', 'model', 'mode', 'sessions', 'autoSince']
+const LIVE_FIELDS = ['provider', 'model', 'mode', 'sessions', 'length', 'autoSince']
 
 /** The marker and writer of DSH's live config references (cosmokit's shared protocol). */
 const WRITE = Symbol.for('cosmokit.volatile.write')
@@ -377,6 +377,7 @@ test('bad config bodies are refused', async () => {
   assert.equal((await h.config({ mode: 'sometimes' }).done).status, 'error')
   assert.equal((await h.config({ addSessions: [1] }).done).status, 'error')
   assert.equal((await h.config({ provider: 'p', model: 'nope' }).done).status, 'error')
+  assert.equal((await h.config({ length: 'medium' }).done).status, 'error')
   assert.equal((await h.config({}).done).status, 'error')
   await h.cleanup()
 })
@@ -440,6 +441,46 @@ test('the daily ceiling stops automatic rewrites but not a hand click', async ()
   const gate = await h.send('/interpreter/config', undefined, 'GET').done
   assert.equal(gate.tokensToday, 45)
   assert.equal(gate.tokenCap, 20)
+  await h.cleanup()
+})
+
+test('a length tier sets the budget, and each tier keeps its own rewrite', async () => {
+  const prompts = []
+  const echo = async function* (request, call) {
+    prompts.push(request.messages[0].content[0].text)
+    yield { type: 'text-delta', text: `draft ${call}` }
+    yield { type: 'usage', usage: { inputTokens: 10, outputTokens: 5 } }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }
+  const h = await host(echo, { live: true })
+  h.setLog([answer()])
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  // 适中 leaves the row's own numbers alone: 600 * 0.35 = 210.
+  assert.match(prompts[0], /速览请控制在 210 字以内/)
+  // 简短 and 详细 override them instead of rewriting the row.
+  assert.equal((await h.config({ length: 'short' }).done).status, 'ok')
+  assert.equal(h.state.restarts, 0)
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.match(prompts[1], /速览请控制在 150 字以内/)
+  await h.config({ length: 'detailed' }).done
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.match(prompts[2], /速览请控制在 300 字以内/)
+  // Each tier remembers its own answer: going back is a cache hit, not a bill.
+  assert.equal((await h.config({ length: 'short' }).done).status, 'ok')
+  assert.equal((await h.rewrite({ sessionId: 's', seq: 1 }).done).text, 'draft 2')
+  await h.config({ length: 'normal' }).done
+  assert.equal((await h.rewrite({ sessionId: 's', seq: 1 }).done).text, 'draft 1')
+  assert.equal(h.state.calls, 3)
+  await h.cleanup()
+})
+
+test('the gate reports the length tier', async () => {
+  const h = await host(answers('ok'), { live: true })
+  assert.equal((await h.send('/interpreter/config', undefined, 'GET').done).length, 'normal')
+  const saved = await h.config({ length: 'detailed' }).done
+  assert.equal(saved.status, 'ok')
+  assert.equal(saved.length, 'detailed')
+  assert.equal((await h.send('/interpreter/config', undefined, 'GET').done).length, 'detailed')
   await h.cleanup()
 })
 

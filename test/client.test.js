@@ -23,7 +23,7 @@ globalThis.window = {
   __DSH_INTERPRETER_TEST__: (exposed) => { helpers = exposed },
 }
 new Function(source)()
-const { blocks, inline, safeHref, tableCells, effectiveMode, renderBlock, readReply, headline, probeTurn, copyText } = helpers
+const { blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, renderBlock, readReply, headline, probeTurn, copyText } = helpers
 
 /** The href of every link in an inline run, or the text where a node is text. */
 const hrefs = (text) => inline(text, 'k').map((node) => (typeof node === 'string' ? node : node.props.href ?? node.type))
@@ -90,6 +90,14 @@ test('the mode a Session sees', () => {
   assert.equal(effectiveMode({ mode: 'session', sessions: ['s'] }, 's'), 'session')
   assert.equal(effectiveMode({ mode: 'session', sessions: ['t'] }, 's'), 'manual')
   assert.equal(effectiveMode({ mode: 'manual', sessions: ['s'] }, 's'), 'manual')
+})
+
+test('the length tier a gate names', () => {
+  assert.equal(effectiveLength({ mode: 'manual', sessions: [], length: 'short' }), 'short')
+  assert.equal(effectiveLength({ mode: 'manual', sessions: [], length: 'detailed' }), 'detailed')
+  // 适中 is the standing answer: a gate from an older Host, or a typo, reads as it.
+  assert.equal(effectiveLength({ mode: 'manual', sessions: [] }), 'normal')
+  assert.equal(effectiveLength({ length: 'huge' }), 'normal')
 })
 
 test('the folded line says what the rewrite concluded', () => {
