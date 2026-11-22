@@ -19,9 +19,10 @@ window.__ModuleLoader__.load({
     /** Host route that says whether a Turn is worth an entry, before anything is spent. */
     const PROBE = '/interpreter/probe';
 
-    /** Raised surface, same idiom as the tool-call cards above it. */
+    /** Raised surface, same idiom as the tool-call cards above it: the native
+     *  turn-tail card rounds at --dsw-radius-lg, so this one does too. */
     const CARD = {
-      marginTop: 14, padding: '12px 16px 14px', borderRadius: 10,
+      marginTop: 14, padding: '12px 16px 14px', borderRadius: 'var(--dsw-radius-lg, 16px)',
       background: 'var(--dsw-alias-bg-layer-1, rgba(128,128,128,0.08))',
       lineHeight: 1.78, wordBreak: 'break-word',
     };
@@ -211,7 +212,7 @@ window.__ModuleLoader__.load({
     /** A row stays quiet until something points at it; only the one in force is in full ink. */
     const ITEM = {
       display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
-      fontSize: 13, padding: '7px 10px', border: 0, borderRadius: 'var(--dsw-radius-md, 8px)',
+      fontSize: 13, padding: '7px 10px', border: 0, borderRadius: 'var(--dsw-radius-md, 12px)',
       background: 'transparent', cursor: 'pointer',
       color: 'var(--dsw-alias-label-secondary, inherit)',
     };
