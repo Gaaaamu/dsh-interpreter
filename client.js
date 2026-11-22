@@ -138,6 +138,36 @@ window.__ModuleLoader__.load({
 @keyframes ra-reveal-second{0%,33.32%{opacity:0}33.33%,to{opacity:1}}
 @keyframes ra-reveal-third{0%,66.65%{opacity:0}66.66%,to{opacity:1}}
 @media(prefers-reduced-motion:reduce){.ra-wait-ghost{display:none}.ra-wait-sweep,.ra-wait-highlight,.ra-dot2,.ra-dot3{animation:none;opacity:1}}
+/* The settings page takes the whole main panel, the way the app's own entry pages do:
+   a title bar that stays put and one scrolling column under it. */
+.ra-set-page{--ra-set-inset:clamp(24px,4vw,48px);display:flex;flex-direction:column;align-items:center;box-sizing:border-box;height:100%;padding:0 var(--ra-set-inset)}
+.ra-set-page>*{flex:none;width:100%;max-width:860px}
+.ra-set-bar{display:flex;align-items:center;gap:12px;padding:calc(28px + var(--dsh-frame-top-clearance,0px)) 0 14px}
+.ra-set-back{display:inline-flex;align-items:center;gap:4px;margin-left:-6px;padding:5px 10px 5px 6px;border:0;border-radius:var(--dsw-radius-md,8px);background:transparent;cursor:pointer;font:inherit;font-size:13px;color:var(--dsw-alias-label-secondary,inherit);transition:background 120ms ease,color 120ms ease}
+.ra-set-back:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12));color:var(--dsw-alias-label-primary,inherit)}
+.ra-set-title{font-size:15px;font-weight:600;color:var(--dsw-alias-label-primary,inherit)}
+.ra-set-fill{flex:1 1 auto;min-width:8px}
+.ra-set-note{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--dsw-alias-label-secondary,inherit)}
+.ra-set-save{flex:none;padding:6px 16px;border:0;border-radius:var(--dsw-radius-md,8px);cursor:pointer;font:inherit;font-size:13px;background:var(--dsw-alias-state-business-primary,#4176e6);color:#fff;transition:opacity 120ms ease}
+.ra-set-save:disabled{opacity:.5;cursor:default}
+.ra-set-body{flex:1 1 auto;display:flex;flex-direction:column;gap:24px;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-bottom:56px}
+.ra-set-group{display:flex;flex-direction:column;gap:10px}
+.ra-set-head{font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--dsw-alias-label-caption,inherit)}
+.ra-set-hint{margin:0;font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary,inherit)}
+.ra-set-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ra-set-label{flex:1 1 auto;min-width:120px;font-size:13px;color:var(--dsw-alias-label-primary,inherit)}
+.ra-set-sub{display:block;margin-top:2px;font-size:12px;color:var(--dsw-alias-label-secondary,inherit)}
+.ra-set-field{box-sizing:border-box;padding:6px 9px;border:.5px solid var(--dsw-alias-border-l2,rgba(128,128,128,.28));border-radius:var(--dsw-radius-sm,6px);outline:none;font:inherit;font-size:13px;color:var(--dsw-alias-label-primary,inherit);background:var(--dsw-alias-bg-layer-1,rgba(128,128,128,.1));transition:border-color 120ms ease}
+.ra-set-field:focus{border-color:var(--dsw-alias-state-business-primary,#4176e6)}
+.ra-set-field[data-width=num]{width:112px}
+.ra-set-field[data-width=wide]{width:100%;max-width:340px}
+.ra-set-area{box-sizing:border-box;width:100%;min-height:170px;resize:vertical;padding:10px 12px;border:.5px solid var(--dsw-alias-border-l2,rgba(128,128,128,.28));border-radius:var(--dsw-radius-md,8px);outline:none;font:var(--dsw-font-markdown-code,13px/20px ui-monospace);font-family:var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-primary,inherit);background:var(--dsw-alias-bg-layer-1,rgba(128,128,128,.1));transition:border-color 120ms ease}
+.ra-set-area:focus{border-color:var(--dsw-alias-state-business-primary,#4176e6)}
+.ra-set-chips{display:flex;gap:8px;flex-wrap:wrap}
+.ra-set-chip{padding:5px 14px;border:.5px solid var(--dsw-alias-border-l2,rgba(128,128,128,.28));border-radius:999px;background:transparent;cursor:pointer;font:inherit;font-size:13px;color:var(--dsw-alias-label-secondary,inherit);transition:background 120ms ease,color 120ms ease,border-color 120ms ease}
+.ra-set-chip:hover{color:var(--dsw-alias-label-primary,inherit)}
+.ra-set-chip[data-on=true]{border-color:transparent;background:var(--dsw-alias-bg-layer-3,rgba(128,128,128,.24));color:var(--dsw-alias-label-primary,inherit);font-weight:600}
+.ra-set-error{margin:0;padding:10px 12px;border-radius:var(--dsw-radius-md,8px);font-size:13px;line-height:1.6;background:var(--dsw-alias-state-error-bg,rgba(220,60,60,.12));color:var(--dsw-alias-state-error-primary,#d94a4a)}
 `;
     /**
      * The three glyphs a link can wear, taken from the app's own icon data so a link
@@ -772,6 +802,26 @@ window.__ModuleLoader__.load({
         h('circle', { cx: 19, cy: 12, r: 1.9 }));
     }
 
+    /**
+     * The key this plugin's own settings page occupies in the main panel. The page
+     * is not the app's Settings dialog: it edits this bundle's rows only, and the
+     * app shows it like any other entry page.
+     */
+    const SETTINGS_PANEL = 'interpreter-settings';
+
+    /**
+     * Where a settings-page save leaves the chosen rewrite model. The model row is
+     * the one switch the block does not share through `gateStore` (the catalog read
+     * owns it), so the page hands it back here and a block that opens its ⋯ menu
+     * afterwards names the new model. Set before the panel switches away.
+     */
+    let savedModel = '';
+
+    /** Set while the plugin is applied: opening the page needs the layout service. */
+    let openSettingsPage = () => {};
+    /** Set while the plugin is applied: closing it is one panel switch back. */
+    let returnToConversation = () => {};
+
     /** The id of the one sheet every block shares. */
     const STYLE_ID = 'dsh-interpreter-css';
 
@@ -798,6 +848,21 @@ window.__ModuleLoader__.load({
     function setSharedGate(value) {
       gateStore.value = value;
       for (const listener of gateStore.listeners) listener(value);
+    }
+
+    /**
+     * Carry a settings-page save into the blocks already on screen, so the switches
+     * in their ⋯ menus read the new values the moment the reader comes back.
+     * @param saved - the canonical reply a save answered with.
+     */
+    function publishGate(saved) {
+      const previous = gateStore.value;
+      setSharedGate({
+        mode: typeof saved.mode === 'string' ? saved.mode : previous?.mode ?? 'manual',
+        sessions: Array.isArray(saved.sessions) ? saved.sessions : previous?.sessions ?? [],
+        length: effectiveLength(saved),
+        language: effectiveLanguage(saved),
+      });
     }
 
     function loadGate() {
@@ -997,7 +1062,8 @@ window.__ModuleLoader__.load({
         requestModels()
           .then((result) => {
             if (result.status !== 'ok') throw new Error(result.message ?? '读不到模型清单');
-            setChoice(`${result.provider}::${result.model}`);
+            savedModel = `${result.provider}::${result.model}`;
+            setChoice(savedModel);
             setModels({ kind: 'ready', providers: result.providers });
           })
           .catch((error) => setModels({ kind: 'failed', message: error instanceof Error ? error.message : String(error) }));
@@ -1027,6 +1093,7 @@ window.__ModuleLoader__.load({
           .then((result) => {
             if (result.status !== 'ok') throw new Error(result.message ?? '保存失败');
             setSaving(false);
+            savedModel = value;
             setChoice(value);
             closeMenu();
             // Picking a model on a quiet Turn is itself a request for a block.
@@ -1241,10 +1308,17 @@ window.__ModuleLoader__.load({
           (done) => setCopyState(done ? 'copied' : 'failed'));
       };
 
+      /**
+       * The model in force. A save made in this block and one made on the settings
+       * page both land here; the page's is written last, so it wins.
+       */
+      const currentModel = () => (savedModel === '' ? choice : savedModel);
+
       /** What the model row says: the chosen model's name, or where it stands. */
       const modelLabel = () => {
-        if (choice === '') return '未选择';
-        const [provider, model] = choice.split('::');
+        const current = currentModel();
+        if (current === '') return '未选择';
+        const [provider, model] = current.split('::');
         if (models !== null && models.kind === 'ready') {
           for (const entry of models.providers) {
             if (entry.id !== provider) continue;
@@ -1315,7 +1389,7 @@ window.__ModuleLoader__.load({
               rows.push(menuRow(
                 value,
                 `${provider.name} · ${model.name}`,
-                value === choice,
+                value === currentModel(),
                 value === hover && !saving,
                 () => pickModel(value),
                 () => setHover(value),
@@ -1338,6 +1412,21 @@ window.__ModuleLoader__.load({
           valueRow('length', '详略', gate === null ? '' : LENGTH_LABEL[effectiveLength(gate)] ?? '', 'length'),
           valueRow('language', '语言', gate === null ? '' : LANG_LABEL[effectiveLanguage(gate)] ?? '', 'language'),
           valueRow('model', '模型', modelLabel(), 'model'),
+          h('div', { key: 'split', style: DIVIDER }),
+          h('button', {
+            key: 'settings',
+            style: { ...ITEM, ...(hover === 'settings' ? ITEM_HOVER : null) },
+            onMouseEnter: () => setHover('settings'),
+            onMouseLeave: () => setHover(null),
+            onClick: () => {
+              // Leaving the popover open would hang it over the page that replaces
+              // the conversation, so it folds away before the panel switches.
+              closeMenu();
+              openSettingsPage();
+            },
+          },
+            h('span', { style: ITEM_TEXT }, '设置'),
+            h('span', { key: 'in', style: CHECK_SLOT }, h(Chevron, { shown: false }))),
         ];
       }
 
@@ -1416,13 +1505,261 @@ window.__ModuleLoader__.load({
           : null);
     }
 
+    /**
+     * One row of the settings page as text, so a number can be cleared and retyped
+     * without the field fighting back.
+     * @param settings - the rows the Host answered with.
+     */
+    function draftOf(settings) {
+      const text = (value) => (typeof value === 'number' && Number.isFinite(value) ? String(value) : '');
+      return {
+        temperature: text(settings?.temperature),
+        ratio: text(settings?.ratio),
+        capChars: text(settings?.capChars),
+        minChars: text(settings?.minChars),
+        maxChars: text(settings?.maxChars),
+        dailyTokenCap: text(settings?.dailyTokenCap),
+        prompt: typeof settings?.prompt === 'string' ? settings.prompt : '',
+      };
+    }
+
+    /** The smallest budget the Host leaves room for; the page checks the same floor. */
+    const MIN_BUDGET = 150;
+    /** The longest prompt the Host accepts. */
+    const MAX_PROMPT_CHARS = 8000;
+
+    /**
+     * The draft as the Host's rows, or the first thing wrong with it. The Host checks
+     * all of this as well; checking here answers a typo beside the field instead of
+     * after a round trip.
+     * @param draft - the page's text fields.
+     */
+    function readDraft(draft) {
+      const number = (label, field, test, hint) => {
+        const raw = String(draft[field] ?? '').trim();
+        if (raw === '') throw new Error(`${label}不能为空`);
+        const value = Number(raw);
+        if (!Number.isFinite(value) || !test(value)) throw new Error(`${label}${hint}`);
+        return value;
+      };
+      const prompt = String(draft.prompt ?? '').trim();
+      if (prompt === '') throw new Error('提示词不能为空');
+      if (prompt.length > MAX_PROMPT_CHARS) throw new Error(`提示词最多 ${MAX_PROMPT_CHARS} 字`);
+      const rows = {
+        temperature: number('温度', 'temperature', (value) => value >= 0 && value <= 2, '要在 0 到 2 之间'),
+        ratio: number('普通档比例', 'ratio', (value) => value > 0 && value < 1, '要大于 0 且小于 1'),
+        capChars: number('普通档上限', 'capChars', (value) => Number.isSafeInteger(value) && value >= MIN_BUDGET, `要是不小于 ${MIN_BUDGET} 的整数`),
+        minChars: number('最短字数', 'minChars', (value) => Number.isSafeInteger(value) && value >= 0, '要是不小于 0 的整数'),
+        maxChars: number('最长字数', 'maxChars', (value) => Number.isSafeInteger(value) && value >= 0, '要是不小于 0 的整数'),
+        dailyTokenCap: number('每日上限', 'dailyTokenCap', (value) => Number.isSafeInteger(value) && value >= 0, '要是不小于 0 的整数'),
+      };
+      if (rows.minChars > rows.maxChars) throw new Error('最短字数不能大于最长字数');
+      // The longest field is spelled the way the Host wants it, ready to send.
+      return { ...rows, prompt: draft.prompt };
+    }
+
+    /**
+     * The plugin's own settings page. The ⋯ menu edits one switch at a time in a
+     * popover; this page puts every row the bundle owns in one place, including the
+     * prompt and the budget numbers a popover has no room for. It holds nothing
+     * Session-scoped: the automatic-rewrite scope stays in the block's own menu.
+     */
+    function SettingsPage() {
+      const [state, setState] = useState({ kind: 'loading' });
+      const [draft, setDraft] = useState(null);
+      const [model, setModel] = useState('');
+      const [models, setModels] = useState(null);
+      const [length, setLength] = useState('normal');
+      const [language, setLanguage] = useState('auto');
+      const [saving, setSaving] = useState(false);
+      const [error, setError] = useState('');
+      const [note, setNote] = useState('');
+
+      /** The rows and the catalog arrive together: the model row needs both. */
+      const load = () => {
+        setState({ kind: 'loading' });
+        setError('');
+        Promise.all([requestGate(), requestModels()]).then(
+          ([gate, catalog]) => {
+            if (gate.status !== 'ok') throw new Error(gate.message ?? '读不到设置');
+            if (catalog.status !== 'ok') throw new Error(catalog.message ?? '读不到模型清单');
+            setDraft(draftOf(gate.settings));
+            setLength(effectiveLength(gate));
+            setLanguage(effectiveLanguage(gate));
+            // No model chosen yet is a real state: the row must stay empty rather
+            // than become a `::` pair the Host would refuse.
+            setModel(catalog.provider === '' || catalog.model === '' ? '' : `${catalog.provider}::${catalog.model}`);
+            setModels({ providers: catalog.providers });
+            setState({ kind: 'ready' });
+          },
+          (failure) => setState({
+            kind: 'failed',
+            message: failure instanceof Error ? failure.message : String(failure),
+          }),
+        );
+      };
+
+      useEffect(() => { ensureStyle(); load(); }, []);
+
+      /** A field being retyped: the note and the complaint go as soon as it changes. */
+      const edit = (field) => (event) => {
+        const value = event.target.value;
+        setDraft((current) => ({ ...current, [field]: value }));
+        setError('');
+        setNote('');
+      };
+
+      /** Save every row at once: one write, one answer, and no restart in between. */
+      const save = () => {
+        if (saving) return;
+        let rows;
+        try {
+          rows = readDraft(draft);
+        } catch (failure) {
+          setError(failure instanceof Error ? failure.message : String(failure));
+          return;
+        }
+        setSaving(true);
+        setError('');
+        setNote('');
+        const [provider, id] = model.split('::');
+        saveGate({
+          ...rows,
+          length,
+          language,
+          // The pair is the one thing the Host will not take half of.
+          ...(provider === undefined || id === undefined ? null : { provider, model: id }),
+        })
+          .then((result) => {
+            if (result.status !== 'ok') throw new Error(result.message ?? '没保存上');
+            setSaving(false);
+            savedModel = model;
+            // The reply is every row as it now stands: open blocks read it from the
+            // shared gate, so their menus are current the moment the reader returns.
+            publishGate(result);
+            if (result.settings !== undefined) setDraft(draftOf(result.settings));
+            setNote('已保存');
+          })
+          .catch((failure) => {
+            setSaving(false);
+            setError(failure instanceof Error ? failure.message : String(failure));
+          });
+      };
+
+      /** One pill per choice, the one in force filled in. */
+      const chips = (menu, current, choose) => h('div', { className: 'ra-set-chips' },
+        menu.map((item) => h('button', {
+          key: item.value,
+          className: 'ra-set-chip',
+          'data-on': item.value === current ? 'true' : 'false',
+          onClick: () => {
+            choose(item.value);
+            setError('');
+            setNote('');
+          },
+        }, item.label)));
+
+      /** A labelled row: the words on the left, the control on the right. */
+      const line = (key, label, control, sub) => h('div', { key, className: 'ra-set-row' },
+        h('span', { className: 'ra-set-label' },
+          label,
+          sub === undefined ? null : h('span', { className: 'ra-set-sub' }, sub)),
+        control);
+
+      /** A number the page treats as text until it is saved. */
+      const numberField = (key, label, sub) => line(key, label, h('input', {
+        className: 'ra-set-field',
+        'data-width': 'num',
+        type: 'text',
+        inputMode: 'decimal',
+        spellCheck: false,
+        value: draft?.[key] ?? '',
+        onChange: edit(key),
+      }), sub);
+
+      /** What the page shows under its title bar. */
+      let body;
+      if (state.kind === 'loading') {
+        body = h('p', { className: 'ra-set-hint' }, '读取设置…');
+      } else if (state.kind === 'failed') {
+        body = [
+          h('p', { key: 'error', className: 'ra-set-error' }, state.message),
+          h('button', { key: 'retry', className: 'ra-set-back', onClick: load }, '重试'),
+        ];
+      } else {
+        body = [
+          error === '' ? null : h('p', { key: 'error', className: 'ra-set-error' }, error),
+          h('section', { key: 'model', className: 'ra-set-group' },
+            h('div', { className: 'ra-set-head' }, '模型'),
+            h('p', { className: 'ra-set-hint' }, '用哪个模型写速览，取自当前可用的模型清单。'),
+            h('div', { className: 'ra-set-row' }, h('select', {
+              className: 'ra-set-field',
+              'data-width': 'wide',
+              value: model,
+              onChange: (event) => { setModel(event.target.value); setError(''); setNote(''); },
+            },
+              h('option', { value: '' }, '尚未选择'),
+              (models?.providers ?? []).map((provider) => h('optgroup', { key: provider.id, label: provider.name },
+                provider.models.map((candidate) => h('option', {
+                  key: candidate.id,
+                  value: `${provider.id}::${candidate.id}`,
+                }, candidate.name))))))),
+          h('section', { key: 'shape', className: 'ra-set-group' },
+            h('div', { className: 'ra-set-head' }, '详略与语言'),
+            h('p', { className: 'ra-set-hint' }, '自动整理的范围（全部、本会话、手动）按会话算，仍在每条速览右上角的 ⋯ 里切换。'),
+            line('length', '详略', chips(LENGTH_MENU, length, setLength)),
+            line('language', '语言', chips(LANG_MENU, language, setLanguage))),
+          h('section', { key: 'prompt', className: 'ra-set-group' },
+            h('div', { className: 'ra-set-head' }, '提示词'),
+            h('p', { className: 'ra-set-hint' }, `交给模型的要求，决定速览怎么写。最多 ${MAX_PROMPT_CHARS} 字。`),
+            h('textarea', {
+              className: 'ra-set-area',
+              spellCheck: false,
+              maxLength: MAX_PROMPT_CHARS,
+              value: draft?.prompt ?? '',
+              onChange: edit('prompt'),
+            })),
+          h('section', { key: 'budget', className: 'ra-set-group' },
+            h('div', { className: 'ra-set-head' }, '字数与温度'),
+            h('p', { className: 'ra-set-hint' }, '速览太短会被丢掉，太长会按上限截断；丢掉的那条改为手动点开。'),
+            numberField('minChars', '最短字数', '短于这个就丢掉'),
+            numberField('maxChars', '最长字数', '长于这个就截断'),
+            numberField('temperature', '温度', '0 最贴原文，2 最自由')),
+          h('section', { key: 'tier', className: 'ra-set-group' },
+            h('div', { className: 'ra-set-head' }, '普通档的篇幅'),
+            h('p', { className: 'ra-set-hint' }, '只影响普通档：按原文比例估字数，再用上限兜底。详细档不看这两项，固定按一半比例、最多 1600 字。'),
+            numberField('ratio', '比例', '0 到 1 之间，如 0.3'),
+            numberField('capChars', '上限', `不小于 ${MIN_BUDGET} 的整数`)),
+          h('section', { key: 'cap', className: 'ra-set-group' },
+            h('div', { className: 'ra-set-head' }, '每天最多用'),
+            h('p', { className: 'ra-set-hint' }, '自动速览当天的 token 用量上限，0 表示不限。只拦自动的；手动点开的不拦，但同样计入当天用量。'),
+            numberField('dailyTokenCap', '每日上限', 'tokens，0 表示不限')),
+        ];
+      }
+
+      return h('div', { className: 'ra-set-page' },
+        h('div', { className: 'ra-set-bar' },
+          h('button', { className: 'ra-set-back', onClick: returnToConversation },
+            h('span', { style: { display: 'inline-flex', transform: 'rotate(180deg)' } }, h(Chevron, { shown: false })),
+            h('span', null, '返回对话')),
+          h('span', { className: 'ra-set-title' }, '速览设置'),
+          h('span', { className: 'ra-set-fill' }),
+          note === '' ? null : h('span', { className: 'ra-set-note' }, note),
+          h('button', {
+            className: 'ra-set-save',
+            disabled: saving || state.kind !== 'ready',
+            onClick: save,
+          }, saving ? '保存中…' : '保存')),
+        h('div', { className: 'ra-set-body' }, body));
+    }
+
     // The test suite reaches the pure helpers through this hook; the app never sets it.
     if (typeof window.__DSH_INTERPRETER_TEST__ === 'function') {
-      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText });
+      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText, draftOf, readDraft });
     }
 
     return {
-      inject: ['slots'],
+      inject: ['slots', 'layout'],
       apply(ctx) {
         ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
           name: 'conversation.chat.turnTail',
@@ -1430,6 +1767,20 @@ window.__ModuleLoader__.load({
           order: 10,
           inject: (sessionId) => ({ sessionId }),
         }, Interpreter));
+        ctx.slots.inject('main', () => ctx.slots.register({
+          name: 'main',
+          key: SETTINGS_PANEL,
+          inject: () => ({}),
+        }, SettingsPage));
+        // Reaching the page is one panel switch; the block's entry row does it, and
+        // the page's own 返回对话 undoes it. Wired after the key is registered, so
+        // neither call can land on a panel the app does not know.
+        openSettingsPage = () => {
+          if (typeof ctx.layout?.selectPanel === 'function') ctx.layout.selectPanel(SETTINGS_PANEL);
+        };
+        returnToConversation = () => {
+          if (typeof ctx.layout?.selectPanel === 'function') ctx.layout.selectPanel(null);
+        };
       },
     };
   },

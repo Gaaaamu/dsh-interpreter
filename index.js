@@ -27,8 +27,12 @@ const LENGTH_TIERS = ['normal', 'detailed']
 /** The languages a 速览 can be written in: the answer's own, or one fixed. */
 const LANGUAGES = ['auto', 'zh', 'en']
 
-/** Largest request body accepted from the page, in bytes. */
-const MAX_BODY_BYTES = 4096
+/** Largest request body accepted from the page, in bytes. A prompt save is the
+ * biggest one by far: it carries the whole instruction the model reads. */
+const MAX_BODY_BYTES = 65536
+
+/** Longest rewrite instruction the settings page accepts, in characters. */
+const MAX_PROMPT_CHARS = 8000
 
 /** Cached rewrites kept in memory; the oldest entry is dropped past this. */
 const MAX_CACHE_ENTRIES = 500
@@ -53,6 +57,14 @@ const MIN_BUDGET = 150
 const LENGTHS = {
   detailed: { ratio: 0.5, capChars: 1600 },
 }
+
+/**
+ * Fields a rewrite reads that its cache key does not already name. Changing one means
+ * work cached or started with the old value no longer answers a request made after the
+ * save, so the revision every cache key carries is bumped for them. The tier, language
+ * and model are in the key itself, so switching back to one still hits its own answer.
+ */
+const REWRITE_FIELDS = ['temperature', 'ratio', 'capChars', 'minChars', 'maxChars', 'prompt']
 
 /** Default rewrite instruction; overridable through `config.prompt`. */
 const DEFAULT_PROMPT = `你把技术回答改写成「速览」。读者聪明但不熟悉这块，他只想知道：结论是什么、要不要动手、动手做什么、有什么坑。
@@ -121,12 +133,11 @@ export const inject = ['webServer', 'llm', 'sessions', 'connection']
 const z = await import('@deepseek-ai/schemastery').then((module) => module.default ?? module, () => undefined)
 
 /**
- * The row's config. The fields the page saves (provider, model, mode,
- * sessions, autoSince) are declared live with `.volatile()`, so a save updates
- * them in place instead of restarting the plugin: rewrites in flight keep
- * running, the cache survives, and no request meets the gap between two
- * instances. They are read on every use; see {@link read}. Changing an
- * ordinary field still restarts the plugin.
+ * The row's config. Every field the block or the settings page saves is declared
+ * live with `.volatile()`, so a save updates it in place instead of restarting
+ * the plugin: rewrites in flight keep running, the cache survives, and no
+ * request meets the gap between two instances. They are read on every use; see
+ * {@link read}. A field a reader writes by hand in the row still works the same.
  */
 export const Config = z === undefined ? undefined : z.object({
   provider: z.string().volatile(),
@@ -139,15 +150,14 @@ export const Config = z === undefined ? undefined : z.object({
   language: z.string().volatile(),
   /** When automation was last switched on or widened, in epoch milliseconds. */
   autoSince: z.number().volatile(),
-  temperature: z.number(),
-  ratio: z.number(),
-  capChars: z.number(),
-  minChars: z.number(),
-  maxChars: z.number(),
-  prompt: z.string(),
-  /** Ordinary, not live: the ceiling changes by editing the row, and the count
-   * it guards starts over with the restart that edit causes. */
-  dailyTokenCap: z.number(),
+  temperature: z.number().volatile(),
+  ratio: z.number().volatile(),
+  capChars: z.number().volatile(),
+  minChars: z.number().volatile(),
+  maxChars: z.number().volatile(),
+  prompt: z.string().volatile(),
+  /** The ceiling on automatic rewrites; live so raising it takes effect now. */
+  dailyTokenCap: z.number().volatile(),
 })
 
 /** The marker DSH's live config references carry (shared across library copies). */
@@ -267,6 +277,29 @@ export function apply(ctx, config) {
    * difference can be checked in a running Host.
    */
   const live = isLive(config?.provider)
+
+  /**
+   * The rows the settings page edits, as the page receives them: always the
+   * effective value, never a live reference, and a number the row does not hold
+   * stands in with its default so the form never shows a hole.
+   * @param options - the settings in force.
+   */
+  function formOf(options) {
+    const number = (value, fallback) => (typeof value === 'number' && Number.isFinite(value) ? value : fallback)
+    return {
+      temperature: number(options.temperature, DEFAULTS.temperature),
+      ratio: number(options.ratio, DEFAULTS.ratio),
+      capChars: number(options.capChars, DEFAULTS.capChars),
+      minChars: number(options.minChars, DEFAULTS.minChars),
+      maxChars: number(options.maxChars, DEFAULTS.maxChars),
+      prompt: typeof options.prompt === 'string' && options.prompt.trim() !== '' ? options.prompt : DEFAULTS.prompt,
+      dailyTokenCap: number(options.dailyTokenCap, DEFAULTS.dailyTokenCap),
+    }
+  }
+
+  /** Bumped by a save that changes a rewrite's input, so the cache key moves on
+   * and an in-flight rewrite is not joined by a request made with other numbers. */
+  let revision = 0
 
   /** Answers committed before this moment were not written while the bundle ran. */
   const startedAt = Date.now()
@@ -504,8 +537,9 @@ export function apply(ctx, config) {
     /** The settings this request runs with, taken once so the key and the call agree. */
     const options = settings()
     // The model, the length tier and the language are part of the key: after a
-    // live switch, work done with the old ones is neither served nor joined.
-    const key = `${options.provider}/${options.model}/${options.length}/${options.language}:${sessionId}:${seq}`
+    // live switch, work done with the old ones is neither served nor joined. The
+    // revision covers the settings page's own rows the same way.
+    const key = `${options.provider}/${options.model}/${options.length}/${options.language}@${revision}:${sessionId}:${seq}`
     if (force !== true && cache.has(key)) return cache.get(key)
     const joined = running.get(key)
     // Work everyone has already walked away from is being torn down; start afresh.
@@ -683,6 +717,9 @@ export function apply(ctx, config) {
       }
       return kept
     })
+    // A save that changes what a rewrite reads makes the results it already
+    // produced stale, whether they are cached or still running.
+    if (Object.keys(next).some((field) => REWRITE_FIELDS.includes(field))) revision += 1
     return kept
   }
 
@@ -724,6 +761,8 @@ export function apply(ctx, config) {
           /** What the guard has to work with: spent today, and the ceiling. */
           tokensToday: Math.round(spentToday()),
           tokenCap: dailyCap(options),
+          /** The rows the settings page edits. */
+          settings: formOf(options),
         })
         return
       }
@@ -780,6 +819,39 @@ export function apply(ctx, config) {
         }
         next.language = body.language
       }
+      /** Each settings-page field, and what the Host accepts for it. */
+      const fields = {
+        temperature: (value) => typeof value === 'number' && value >= 0 && value <= 2,
+        ratio: (value) => typeof value === 'number' && value > 0 && value < 1,
+        capChars: (value) => Number.isSafeInteger(value) && value >= MIN_BUDGET,
+        minChars: (value) => Number.isSafeInteger(value) && value >= 0,
+        maxChars: (value) => Number.isSafeInteger(value) && value >= 0,
+        dailyTokenCap: (value) => Number.isSafeInteger(value) && value >= 0,
+      }
+      for (const [field, accepts] of Object.entries(fields)) {
+        const value = body?.[field]
+        if (value === undefined) continue
+        if (!accepts(value)) {
+          reply(res, 400, { status: 'error', message: `${field} is out of range` })
+          return
+        }
+        next[field] = value
+      }
+      if (body?.prompt !== undefined) {
+        const prompt = body.prompt
+        if (typeof prompt !== 'string' || prompt.trim() === '' || prompt.length > MAX_PROMPT_CHARS) {
+          reply(res, 400, { status: 'error', message: `prompt must be text of 1 to ${MAX_PROMPT_CHARS} characters` })
+          return
+        }
+        next.prompt = prompt
+      }
+      // Compared with the row as it will read afterwards, so saving only one of
+      // the two bounds still catches a pair that leaves no answer eligible.
+      const merged = { ...formOf(settings()), ...next }
+      if (merged.minChars > merged.maxChars) {
+        reply(res, 400, { status: 'error', message: 'the shortest answer cannot be longer than the longest' })
+        return
+      }
       /** Each block holds its own copy of the list, so it sends changes, never the whole list. */
       const sessionLists = {}
       for (const field of ['sessions', 'addSessions', 'removeSessions']) {
@@ -812,6 +884,7 @@ export function apply(ctx, config) {
         sessions: Array.isArray(after.sessions) ? after.sessions : [],
         length: LENGTH_TIERS.includes(after.length) ? after.length : DEFAULTS.length,
         language: LANGUAGES.includes(after.language) ? after.language : DEFAULTS.language,
+        settings: formOf({ ...DEFAULTS, ...after }),
       })
     },
   }), 'interpreter: config route')

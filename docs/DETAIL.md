@@ -7,13 +7,21 @@ Project page: [dsh-interpreter](https://github.com/Gaaaamu/dsh-interpreter)
 ## Using it
 
 - **Manual (default)**: a reply long enough shows a single 「› 速览」 row. Click it to generate; nothing is spent until you click.
-- **Automatic**: expand the block and switch to 「全部」 or 「本会话」 in the top-right corner. Automatic mode covers only replies written after the switch; opening an old session never backfills it. At most 2 rewrites run at once.
-- **Model**: 「模型」 lists the providers and models configured in DSH. No model is bundled, and nothing is generated until you pick one.
-- **Length**: 「普通 / 详细」 in the block switch in one click. This block is rewritten at the new tier, other blocks follow the setting, and any block opened later uses it. Each tier keeps its own cache, so switching back and forth is free. 普通 uses the configured ratio and ceiling; 详细 uses 0.5 / 1600 instead.
-- **Language**: 「跟随 / 中文 / 英文」 picks what the 速览 is written in; the default follows the original reply. A fixed language also governs the tightening pass when the draft runs over budget. Each choice keeps its own cache.
+- **One menu for the switches**: `⋯` at the block's top-right folds every per-block switch into four rows, each showing the value in force. Picking a value applies it and closes the menu; 「返回」 drills back out of the 「模型」 list.
+- **Automatic**: in that menu, 「自动速览」 switches between 「手动」, 「本会话」 and 「全部」. Automatic mode covers only replies written after the switch; opening an old session never backfills it. At most 2 rewrites run at once.
+- **Model**: the 「模型」 row lists the providers and models configured in DSH. No model is bundled, and nothing is generated until you pick one.
+- **Length**: 「详略」 switches between 「普通」 and 「详细」 in one click. This block is rewritten at the new tier, other blocks follow the setting, and any block opened later uses it. Each tier keeps its own cache, so switching back and forth is free. 普通 uses the configured ratio and ceiling; 详细 uses 0.5 / 1600 instead.
+- **Language**: 「语言」 picks between 「跟随」, 「中文」 and 「英文」; the default follows the original reply. A fixed language also governs the tightening pass when the draft runs over budget. Each choice keeps its own cache.
 - Folded, the block is one row: 「› 速览 · first sentence」. Expanded, the bottom-right corner shows the tokens this rewrite cost, copies the whole Markdown, and discards the result to redo it.
 
-![Condensed view block: one conclusion line and a few short bullets, mode and model controls top right, token count and copy button bottom right](images/preview-block.png)
+## The settings page
+
+The menu's last row, 「设置」, opens 「速览设置」, a page of the plugin's own (a panel switch, not DSH's Settings). It carries every row the bundle owns: model, 「详略」, 「语言」, the prompt, the shortest / longest answer, the 普通-tier ratio and ceiling, temperature, and the daily token ceiling. 「保存」 sends the whole page in one write; 「返回对话」 returns to the conversation.
+
+- Every editable field is a live field, so a save takes effect in place: no plugin restart, and no interruption to a rewrite in flight. A prompt or number change makes the next click generate afresh, while a tier, language or model switch keeps its own cache.
+- 「自动速览」 and its session allow-list are deliberately not on this page: scope is per session and stays in the block's own menu, so a stale copy of the allow-list can never overwrite another block's change.
+- The page checks its own numbers before sending (blank fields, out-of-range values, shortest > longest) and the Host re-checks them, so a mistyped row answers beside the field instead of after a failed round trip.
+
 
 ## When it appears
 
@@ -29,7 +37,7 @@ Project page: [dsh-interpreter](https://github.com/Gaaaamu/dsh-interpreter)
 
 ## Configuration
 
-In the profile's `cordis.patch.yml`, under the `- id: interpreter` row's `config`; the model and mode you pick in the UI are written back to the same row.
+In the profile's `cordis.patch.yml`, under the `- id: interpreter` row's `config`. Every row on the settings page and every menu pick is written back to the same row, so the YAML is only needed for values the page does not show.
 
 | Key | Default | Meaning |
 | --- | --- | --- |

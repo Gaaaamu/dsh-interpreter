@@ -23,8 +23,10 @@ Generates an independent "Condensed View" summary block below each DSH response,
 * **原生样式融合**：排版、字号、代码块、表格与链接样式直接复用 DSH 主题变量，随宿主主题与字号设置同步变化；右下角实时显示本次摘要消耗的 Token 数量（悬停可查看输入 / 输出明细）。
 * **入口只在有用时出现**：短回答、纯工具轮次、没有正文的轮次不再显示「› 速览」，省得点开只看到一句「这条没什么可压的」；判定在 Host 侧做，一次本地请求、不调模型。
 * **一键带走**：速览右下角的复制按钮把整段 Markdown 原文放进剪贴板，粘贴到笔记、工单或聊天里不丢格式；点完图标本身变成一个勾，一秒多后自己变回来，不会多出一行字把 token 花费挤开。
-* **长度随手调**：区块右上角的「普通 / 详细」两档快切，改了就按新档重写当前这块，其他块跟着改设置；两档各自缓存，来回切换不重复计费。
+* **长度随手调**：`⋯` 菜单里的「详略」两档快切，选完即按新档重写当前这块，其他块跟着改设置；两档各自缓存，来回切换不重复计费。
 * **语言定下来**：速览默认跟原文同语言，也可用「跟随 / 中文 / 英文」固定一种，术语和命令照抄不译；首次生成与收紧那一轮都照办，三种选择各自缓存。
+* **开关收进一个角落菜单**：区块右上角的 `⋯` 把「自动速览 / 详略 / 语言 / 模型」四行收进一个菜单，选完就关，界面上只留折起来的那一行。
+* **插件自己的设置页**：菜单最后一行「设置」打开「速览设置」页，模型、详略、语言、提示词、字数上下限、温度、每日 token 上限集中在一处改，保存就地生效，不用去翻 YAML，也不用重启。
 
 ### 安装与使用
 
@@ -40,9 +42,10 @@ Generates an independent "Condensed View" summary block below each DSH response,
 
 #### 2. 首次配置与运行模式
 插件安装后默认处于**手动模式**，不会自动触发调用产生费用：
-1. 点击回答下方的「› 速览」展开区块，在右上角「模型」下拉菜单中选择当前环境中可用的 `provider / model`。
-2. 需要控制篇幅时，用旁边的「普通 / 详细」切换长度档位；想固定语言就用「跟随 / 中文 / 英文」。两者都是本机偏好，存进同一个 `config`。
-3. 根据使用习惯切换运行模式（选择存进**当前 Profile 目录下**的 `cordis.patch.yml`，即其中 `- id: interpreter` 那一行的 `config`，由界面经 DSH 的配置接口写回。模型、模式、长度档位、语言和白名单是 DSH 的 live 字段，保存后就地生效，插件不重启，正在生成的速览不受影响）：
+1. 点击回答下方的「› 速览」展开区块，点区块右上角的 `⋯`，先在「模型」一行选好当前环境中可用的 `provider / model`。
+2. 同一个菜单里就能调篇幅和语言：需要控制长度时切「普通 / 详细」，想固定语言就切「跟随 / 中文 / 英文」。两者都是本机偏好，存进同一个 `config`。
+3. 菜单最后一行「设置」打开插件自己的「速览设置」页：提示词、字数上下限、温度、每日 token 上限这些要打字或算数的项都在这里，点「保存」就地生效（都是 live 字段，插件不重启；左上角「返回对话」回到会话）。
+4. 根据使用习惯切换运行模式（选择存进**当前 Profile 目录下**的 `cordis.patch.yml`，即其中 `- id: interpreter` 那一行的 `config`，由界面经 DSH 的配置接口写回。模型、模式、长度档位、语言、提示词与字数参数都是 DSH 的 live 字段，保存后就地生效，插件不重启，正在生成的速览不受影响）：
 
 | 模式 | 行为说明 |
 | :--- | :--- |
@@ -55,6 +58,8 @@ Generates an independent "Condensed View" summary block below each DSH response,
 ### 参数配置
 
 在**当前 Profile 目录下**的 `cordis.patch.yml` 里，通过 `- id: interpreter` 那一行的 `config` 字段调整参数（优先级：内置默认 < 该行 `config`；界面上的选择也写回这一行）。
+
+日常调参不用改文件：块右上角 `⋯` → 「设置」里的「速览设置」页覆盖了下表全部参数，保存就地生效。下面的表格是这些参数的默认值与含义，也是手改 YAML 时的参照。
 
 > 注意：插件包里也有一个同名的 `cordis.patch.yml`，那只是安装时的初始值。界面第一次保存后，Profile 里的这一行会带上完整的 `config`（包括当时的 `minChars` 等），从此整份替代插件包里的初始值；之后要调参，请改 Profile 目录下的那份。
 
@@ -100,7 +105,6 @@ npm test
 #### 中期：降低理解成本
 1. **模式分层**：全局默认模式移至设置页，块内只保留「本会话自动速览」开关，明确每个控件的作用范围。
 2. **首次引导**：未选模型时点击速览，直接弹出模型卡片并标注推荐项，选定后立即生成当前这一条。
-3. **可视化设置页**：在前端调整长度档位（普通 / 详细）、模型与提示词；`temperature`、`minChars`、`maxChars` 收入高级选项，无需修改 YAML。
 
 #### 后续：扩展价值
 1. **引用**：把速览引用到输入框继续追问（仅在用户主动操作时进入对话上下文）。
@@ -134,8 +138,10 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 * **Native UI Integration**: Typography, inline-code chips, tables, and link styles inherit directly from DSH theme tokens. A token counter in the bottom-right corner reports the exact cost of each rewrite (hover for input / output / total breakdown).
 * **An Entry Only Where It Helps**: Short answers, tool-only turns, and turns without prose get no 「› 速览」 line, so clicking never lands on "nothing to condense"; the Host decides, with one local request and no model call.
 * **Take It With You**: A copy button in the summary's bottom-right corner puts the whole Markdown on the clipboard, formatting intact for a note, an issue, or a chat message; the icon itself turns into a check for a moment and then back, so no text pushes the token count aside.
-* **Length On Tap**: 「普通 / 详细」 in the block's top-right corner switches tier in one click; the current block is rewritten at the new size and other blocks follow the setting. Each tier keeps its own cache, so switching back and forth costs nothing.
+* **Length On Tap**: 「详略」 in the `⋯` menu switches tier in one click; the current block is rewritten at the new size and other blocks follow the setting. Each tier keeps its own cache, so switching back and forth costs nothing.
 * **Language, Pinned**: the 速览 follows the answer's own language by default, or 「跟随 / 中文 / 英文」 pins one; terms and commands are copied verbatim, never translated. Both the first draft and the tightening pass obey it, and each choice keeps its own cache.
+* **Switches in One Corner**: `⋯` at the block's top-right folds 自动速览 / 详略 / 语言 / 模型 into one menu that closes on a pick, leaving the folded row to carry the line on its own.
+* **A Settings Page of Its Own**: the menu's last row, 「设置」, opens the 「速览设置」 page: model, tier, language, prompt, length bounds, temperature and the daily token ceiling in one place. Saves land in place — no YAML to edit, no restart.
 
 ### Installation & Usage
 
@@ -151,9 +157,10 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 
 #### 2. Initial Setup & Modes
 The plugin defaults to **Manual** mode so no calls are made automatically upon installation:
-1. Click "› 速览" below a response and open the "模型" (Model) menu to select an available `provider / model` exposed by `ctx.llm`.
-2. Use 「普通 / 详细」 next to it to pick a length tier, and 「跟随 / 中文 / 英文」 to pin the language; both are local preferences and land in the same `config`.
-3. Switch modes as needed (the choice lives in **the profile directory's** `cordis.patch.yml`, in the `config` of its `- id: interpreter` row, written back by the UI through DSH's config API. Model, mode, length tier, language and allow-list are DSH live fields: a save takes effect in place without restarting the plugin, so rewrites in progress are not interrupted):
+1. Click "› 速览" below a response, then `⋯` at its top-right, and pick an available `provider / model` from the 「模型」 row.
+2. The same menu carries size and language: 「普通 / 详细」 for the tier and 「跟随 / 中文 / 英文」 to pin the language; both are local preferences and land in the same `config`.
+3. The menu's last row, 「设置」, opens the plugin's own 「速览设置」 page for the rows that need typing or arithmetic — prompt, shortest / longest answer, temperature, daily token ceiling. 「保存」 writes them in place (all live fields, no plugin restart); 「返回对话」 goes back to the conversation.
+4. Switch modes as needed (the choice lives in **the profile directory's** `cordis.patch.yml`, in the `config` of its `- id: interpreter` row, written back by the UI through DSH's config API. Model, mode, length tier, language, prompt and length bounds are DSH live fields: a save takes effect in place without restarting the plugin, so rewrites in progress are not interrupted):
 
 | Mode | Behavior |
 | :--- | :--- |
@@ -166,6 +173,8 @@ Automatic modes only cover answers written **after** they were switched on: open
 ### Configuration
 
 Parameters can be tuned in **the profile directory's** `cordis.patch.yml`, under `config` of its `- id: interpreter` row (precedence: built-in defaults < that row's `config`; UI choices are written back to the same row).
+
+For day-to-day tuning there is no file to edit: the 「速览设置」 page behind `⋯` → 「设置」 covers every parameter in the table below, and a save lands in place. The table documents their defaults and meanings, and doubles as a reference when editing the YAML by hand.
 
 > Note: the plugin package ships its own `cordis.patch.yml`; that file only seeds the first install. After the first save from the UI, the profile row carries the complete `config` (including the `minChars` and other values in force at the time) and replaces the package's values entirely, so tune the profile directory's copy from then on.
 
@@ -211,7 +220,6 @@ Listed by priority.
 #### Mid Term: Easier to Understand
 1. **Layered Modes**: Move the global default mode to the settings page and keep only an "auto-summarize this session" toggle in the block, so the scope of each control is clear.
 2. **First-Run Guidance**: When no model is selected, clicking the block opens the model card directly with recommended picks marked, then generates the current answer right after a pick.
-3. **Visual Settings Page**: Adjust a length level (brief / standard), the model, and the prompt in the UI; `temperature`, `minChars`, and `maxChars` move under advanced options, with no YAML editing required.
 
 #### Later: More Value per Summary
 1. **Quote**: Quote the summary into the composer to follow up (it enters the conversation context only when you do this yourself).

@@ -23,7 +23,7 @@ globalThis.window = {
   __DSH_INTERPRETER_TEST__: (exposed) => { helpers = exposed },
 }
 new Function(source)()
-const { blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText } = helpers
+const { blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText, draftOf, readDraft } = helpers
 
 /** The href of every link in an inline run, or the text where a node is text. */
 const hrefs = (text) => inline(text, 'k').map((node) => (typeof node === 'string' ? node : node.props.href ?? node.type))
@@ -186,4 +186,61 @@ test('a copy with no clipboard to reach reports itself instead of throwing', asy
   // in: the button has to hear 「复制失败」 rather than an exception escaping the
   // click, which would leave it looking like nothing happened.
   assert.equal(await copyText('速览'), false)
+})
+
+test('the settings page checks its own rows before spending a round trip', () => {
+  const good = {
+    temperature: '0.4',
+    ratio: '0.35',
+    capChars: '600',
+    minChars: '400',
+    maxChars: '1200',
+    dailyTokenCap: '20000',
+    prompt: '写得短一点。',
+  }
+  assert.deepEqual(readDraft(good), {
+    temperature: 0.4,
+    ratio: 0.35,
+    capChars: 600,
+    minChars: 400,
+    maxChars: 1200,
+    dailyTokenCap: 20000,
+    prompt: '写得短一点。',
+  })
+  // 0 is a real value for the ceiling: it means no ceiling.
+  assert.equal(readDraft({ ...good, dailyTokenCap: '0' }).dailyTokenCap, 0)
+  const refuses = (draft, pattern) => assert.throws(() => readDraft({ ...good, ...draft }), pattern)
+  refuses({ temperature: '3' }, /温度要在 0 到 2 之间/)
+  refuses({ temperature: '' }, /温度不能为空/)
+  refuses({ ratio: '1' }, /普通档比例要大于 0 且小于 1/)
+  refuses({ ratio: '0' }, /普通档比例要大于 0 且小于 1/)
+  refuses({ capChars: '149' }, /普通档上限要是不小于 150 的整数/)
+  refuses({ capChars: '1.5' }, /普通档上限要是不小于 150 的整数/)
+  refuses({ minChars: '-1' }, /最短字数要是不小于 0 的整数/)
+  refuses({ minChars: '900', maxChars: '800' }, /最短字数不能大于最长字数/)
+  refuses({ prompt: '   ' }, /提示词不能为空/)
+  refuses({ prompt: 'x'.repeat(8001) }, /提示词最多 8000 字/)
+  // The text is left exactly as typed; only the numbers are read.
+  assert.equal(readDraft({ ...good, prompt: ' 两行\n三行 ' }).prompt, ' 两行\n三行 ')
+})
+
+test('the draft is the rows as text, and a missing row stays empty', () => {
+  assert.deepEqual(draftOf(null), {
+    temperature: '',
+    ratio: '',
+    capChars: '',
+    minChars: '',
+    maxChars: '',
+    dailyTokenCap: '',
+    prompt: '',
+  })
+  assert.deepEqual(draftOf({ temperature: 0, prompt: 'x' }), {
+    temperature: '0',
+    ratio: '',
+    capChars: '',
+    minChars: '',
+    maxChars: '',
+    dailyTokenCap: '',
+    prompt: 'x',
+  })
 })

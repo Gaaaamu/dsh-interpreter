@@ -11,7 +11,10 @@ const LONG = 'x'.repeat(600)
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** The fields index.js declares `.volatile()` in its Config. */
-const LIVE_FIELDS = ['provider', 'model', 'mode', 'sessions', 'length', 'language', 'autoSince']
+const LIVE_FIELDS = [
+  'provider', 'model', 'mode', 'sessions', 'length', 'language', 'autoSince',
+  'temperature', 'ratio', 'capChars', 'minChars', 'maxChars', 'prompt', 'dailyTokenCap',
+]
 
 /** The marker and writer of DSH's live config references (cosmokit's shared protocol). */
 const WRITE = Symbol.for('cosmokit.volatile.write')
@@ -546,6 +549,121 @@ test('the gate reports whether saves update the plugin in place', async () => {
   // A live save keeps the plugin, so the report does not change under it.
   await live.config({ mode: 'global' }).done
   assert.equal((await live.send('/interpreter/config', undefined, 'GET').done).live, true)
+})
+
+test('the gate reports every row the settings page edits', async () => {
+  const h = await host(answers('ok'))
+  const gate = await h.send('/interpreter/config', undefined, 'GET').done
+  assert.deepEqual(gate.settings, {
+    temperature: 0.3,
+    ratio: 0.35,
+    capChars: 900,
+    minChars: 400,
+    maxChars: 40000,
+    prompt: gate.settings.prompt,
+    dailyTokenCap: 0,
+  })
+  assert.match(gate.settings.prompt, /速览/)
+  await h.cleanup()
+})
+
+test('the settings page rows are checked before they are saved', async () => {
+  const h = await host(answers('ok'))
+  const refused = async (body, message) => {
+    const answer = await h.config(body).done
+    assert.equal(answer.status, 'error', JSON.stringify(body))
+    assert.equal(answer.message, message, JSON.stringify(body))
+  }
+  // A model is one choice: half of it is not a save.
+  await refused({ provider: 'p' }, 'provider and model are required together')
+  await refused({ provider: 'p', model: 'nope' }, 'that model is not available right now')
+  await refused({ temperature: 3 }, 'temperature is out of range')
+  await refused({ temperature: '0.3' }, 'temperature is out of range')
+  await refused({ ratio: 1 }, 'ratio is out of range')
+  await refused({ capChars: 149 }, 'capChars is out of range')
+  await refused({ minChars: -1 }, 'minChars is out of range')
+  await refused({ dailyTokenCap: 1.5 }, 'dailyTokenCap is out of range')
+  await refused({ prompt: '   ' }, 'prompt must be text of 1 to 8000 characters')
+  await refused({ prompt: 'x'.repeat(8001) }, 'prompt must be text of 1 to 8000 characters')
+  // The bounds are checked as the row will read afterwards, not as sent.
+  await refused({ maxChars: 300 }, 'the shortest answer cannot be longer than the longest')
+  await refused({}, 'nothing to save')
+  assert.equal(h.state.saves, 0)
+  await h.cleanup()
+})
+
+test('a settings save lands in place, and the next rewrite uses every row', async () => {
+  const prompts = []
+  const systems = []
+  const echo = async function* (request, call) {
+    prompts.push(request.messages[0].content[0].text)
+    systems.push(request.system)
+    yield { type: 'text-delta', text: `draft ${call}` }
+    yield { type: 'usage', usage: { inputTokens: 10, outputTokens: 5 } }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }
+  const h = await host(echo, { live: true })
+  const saved = await h.config({
+    provider: 'p',
+    model: 'm2',
+    length: 'detailed',
+    language: 'zh',
+    temperature: 0.8,
+    ratio: 0.2,
+    capChars: 500,
+    minChars: 300,
+    maxChars: 3000,
+    dailyTokenCap: 5000,
+    prompt: '只留结论。',
+  }).done
+  assert.equal(saved.status, 'ok')
+  assert.equal(h.state.restarts, 0)
+  assert.deepEqual(saved.settings, {
+    temperature: 0.8,
+    ratio: 0.2,
+    capChars: 500,
+    minChars: 300,
+    maxChars: 3000,
+    prompt: '只留结论。',
+    dailyTokenCap: 5000,
+  })
+  const gate = await h.send('/interpreter/config', undefined, 'GET').done
+  assert.deepEqual(gate.settings, saved.settings)
+  assert.equal(gate.tokenCap, 5000)
+  h.setLog([answer()])
+  assert.equal((await h.rewrite({ sessionId: 's', seq: 1 }).done).status, 'ok')
+  assert.equal(h.state.models[0], 'm2')
+  // The prompt is the system message; the tier's own budget and language still
+  // ride in the user Turn.
+  assert.equal(systems[0], '只留结论。')
+  assert.match(prompts[0], /速览请控制在 300 字以内/)
+  assert.match(prompts[0], /速览一律用中文写/)
+  await h.cleanup()
+})
+
+test('a prompt change is not answered from a cache written with the old one', async () => {
+  const h = await host(answers((call) => `draft ${call}`), { live: true })
+  h.setLog([answer()])
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.equal(h.state.calls, 1)
+  // Same tier and language, same answer: still a cache hit.
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.equal(h.state.calls, 1)
+  await h.config({ prompt: '只留一句。' }).done
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.equal(h.state.calls, 2)
+  // The numeric rows are read when the request is built, so they age the cache too.
+  await h.config({ temperature: 0.9 }).done
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.equal(h.state.calls, 3)
+  // The tier and the language are in the key itself: switching back hits its own answer.
+  await h.config({ length: 'detailed' }).done
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.equal(h.state.calls, 4)
+  await h.config({ length: 'normal' }).done
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.equal(h.state.calls, 4)
+  await h.cleanup()
 })
 
 test('the entry is offered only where a click has something to do', async () => {
