@@ -20,10 +20,16 @@ window.__ModuleLoader__.load({
     const PROBE = '/interpreter/probe';
 
     /** Raised surface, same idiom as the tool-call cards above it: the native
-     *  turn-tail card rounds at --dsw-radius-lg, so this one does too. */
+     *  turn-tail card rounds at --dsw-radius-lg, so this one does too.
+     *
+     *  The fill is the translucent interactive wash rather than bg-layer-1: in the
+     *  light theme every bg-layer token resolves to plain white, the same as the
+     *  page, so a layer-coloured block there had no edge at all. This wash tints
+     *  whatever it sits on — a grey block on white paper, a lifted block in the
+     *  dark — and is what the native frames use for their quiet surfaces too. */
     const CARD = {
       marginTop: 14, padding: '12px 16px 14px', borderRadius: 'var(--dsw-radius-lg, 16px)',
-      background: 'var(--dsw-alias-bg-layer-1, rgba(128,128,128,0.08))',
+      background: 'var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.08))',
       lineHeight: 1.78, wordBreak: 'break-word',
     };
     /** The name of this block; renaming the feature starts and ends here. */

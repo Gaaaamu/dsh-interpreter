@@ -1,7 +1,5 @@
 # Condensed view
 
-![Condensed view block: conclusion first, with mode and model controls in its top-right corner](images/preview-reading.png)
-
 Appends a 「速览」 block below each assistant reply: conclusion first, about a third of the original length, with numbers, code, paths, and commands kept verbatim. The rewrite runs beside the conversation—the main model's system prompt and context stay untouched.
 
 ## Using it
@@ -10,6 +8,8 @@ Appends a 「速览」 block below each assistant reply: conclusion first, about
 - **Automatic**: expand the block and switch to 「全部」 or 「本会话」 in the top-right corner. Automatic mode covers only replies written after the switch; opening an old session never backfills it. At most 2 rewrites run at once.
 - **Model**: 「模型」 lists the providers and models configured in DSH. No model is bundled, and nothing is generated until you pick one.
 - Folded, the block is one row: 「› 速览 · first sentence」. Expanded, the bottom-right corner shows the tokens this rewrite cost, copies the whole Markdown, and discards the result to redo it.
+
+![Condensed view block: one conclusion line and four bullets, mode and model controls top right, token count and copy button bottom right](images/preview-block.png)
 
 ## When it appears
 
