@@ -23,7 +23,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 * **原生样式融合**：排版、字号、代码块、表格与链接样式直接复用 DSH 主题变量，随宿主主题与字号设置同步变化；右下角实时显示本次摘要消耗的 Token 数量（悬停可查看输入 / 输出明细）。
 * **入口只在有用时出现**：短回答、纯工具轮次、没有正文的轮次不再显示「› 速览」，省得点开只看到一句「这条没什么可压的」；判定在 Host 侧做，一次本地请求、不调模型。
 * **一键带走**：速览右下角的复制按钮把整段 Markdown 原文放进剪贴板，粘贴到笔记、工单或聊天里不丢格式；点完图标本身变成一个勾，一秒多后自己变回来，不会多出一行字把 token 花费挤开。
-* **长度随手调**：区块右上角的「简短 / 适中 / 详细」三档快切，改了就按新档重写当前这块，其他块跟着改设置；三档各自缓存，来回切换不重复计费。
+* **长度随手调**：区块右上角的「普通 / 详细」两档快切，改了就按新档重写当前这块，其他块跟着改设置；两档各自缓存，来回切换不重复计费。
 * **语言定下来**：速览默认跟原文同语言，也可用「跟随 / 中文 / 英文」固定一种，术语和命令照抄不译；首次生成与收紧那一轮都照办，三种选择各自缓存。
 
 ### 安装与使用
@@ -41,7 +41,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 #### 2. 首次配置与运行模式
 插件安装后默认处于**手动模式**，不会自动触发调用产生费用：
 1. 点击回答下方的「› 速览」展开区块，在右上角「模型」下拉菜单中选择当前环境中可用的 `provider / model`。
-2. 需要控制篇幅时，用旁边的「简短 / 适中 / 详细」切换长度档位；想固定语言就用「跟随 / 中文 / 英文」。两者都是本机偏好，存进同一个 `config`。
+2. 需要控制篇幅时，用旁边的「普通 / 详细」切换长度档位；想固定语言就用「跟随 / 中文 / 英文」。两者都是本机偏好，存进同一个 `config`。
 3. 根据使用习惯切换运行模式（选择存进**当前 Profile 目录下**的 `cordis.patch.yml`，即其中 `- id: interpreter` 那一行的 `config`，由界面经 DSH 的配置接口写回。模型、模式、长度档位、语言和白名单是 DSH 的 live 字段，保存后就地生效，插件不重启，正在生成的速览不受影响）：
 
 | 模式 | 行为说明 |
@@ -65,7 +65,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 | `maxChars` | `40000` | 触发摘要的最大字符数，超出该长度的回答将被跳过 |
 | `ratio` | `0.35` | 摘要目标字数占原文长度的比例 |
 | `capChars` | `900` | 速览自身的字数上限：按 `ratio` 换算出的目标超过它时，按它算（短回答仍至少留 150 字） |
-| `length` | `normal` | 长度档位：`short`（简短）/ `normal`（适中）/ `detailed`（详细）。`short` 与 `detailed` 自带比例和上限（0.25 / 600、0.5 / 1600），覆盖 `ratio`、`capChars`；`normal` 用配置里的值 |
+| `length` | `normal` | 长度档位：`normal`（普通）/ `detailed`（详细）。`detailed` 自带比例和上限（0.5 / 1600），覆盖 `ratio`、`capChars`；`normal` 用配置里的值 |
 | `language` | `auto` | 速览语言：`auto`（跟随原文）/ `zh`（固定中文）/ `en`（固定英文）。固定后即使原文是另一种语言也照办 |
 | `temperature` | `0.3` | 摘要生成的采样温度 |
 | `prompt` | 内置 | 摘要改写指令，可通过自定义指令调整输出风格 |
@@ -100,7 +100,7 @@ npm test
 #### 中期：降低理解成本
 1. **模式分层**：全局默认模式移至设置页，块内只保留「本会话自动速览」开关，明确每个控件的作用范围。
 2. **首次引导**：未选模型时点击速览，直接弹出模型卡片并标注推荐项，选定后立即生成当前这一条。
-3. **可视化设置页**：在前端调整长度档位（简短 / 适中）、模型与提示词；`temperature`、`minChars`、`maxChars` 收入高级选项，无需修改 YAML。
+3. **可视化设置页**：在前端调整长度档位（普通 / 详细）、模型与提示词；`temperature`、`minChars`、`maxChars` 收入高级选项，无需修改 YAML。
 
 #### 后续：扩展价值
 1. **引用**：把速览引用到输入框继续追问（仅在用户主动操作时进入对话上下文）。
@@ -134,7 +134,7 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 * **Native UI Integration**: Typography, inline-code chips, tables, and link styles inherit directly from DSH theme tokens. A token counter in the bottom-right corner reports the exact cost of each rewrite (hover for input / output / total breakdown).
 * **An Entry Only Where It Helps**: Short answers, tool-only turns, and turns without prose get no 「› 速览」 line, so clicking never lands on "nothing to condense"; the Host decides, with one local request and no model call.
 * **Take It With You**: A copy button in the summary's bottom-right corner puts the whole Markdown on the clipboard, formatting intact for a note, an issue, or a chat message; the icon itself turns into a check for a moment and then back, so no text pushes the token count aside.
-* **Length On Tap**: 「简短 / 适中 / 详细」 in the block's top-right corner switches tier in one click; the current block is rewritten at the new size and other blocks follow the setting. Each tier keeps its own cache, so switching back and forth costs nothing.
+* **Length On Tap**: 「普通 / 详细」 in the block's top-right corner switches tier in one click; the current block is rewritten at the new size and other blocks follow the setting. Each tier keeps its own cache, so switching back and forth costs nothing.
 * **Language, Pinned**: the 速览 follows the answer's own language by default, or 「跟随 / 中文 / 英文」 pins one; terms and commands are copied verbatim, never translated. Both the first draft and the tightening pass obey it, and each choice keeps its own cache.
 
 ### Installation & Usage
@@ -152,7 +152,7 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 #### 2. Initial Setup & Modes
 The plugin defaults to **Manual** mode so no calls are made automatically upon installation:
 1. Click "› 速览" below a response and open the "模型" (Model) menu to select an available `provider / model` exposed by `ctx.llm`.
-2. Use 「简短 / 适中 / 详细」 next to it to pick a length tier, and 「跟随 / 中文 / 英文」 to pin the language; both are local preferences and land in the same `config`.
+2. Use 「普通 / 详细」 next to it to pick a length tier, and 「跟随 / 中文 / 英文」 to pin the language; both are local preferences and land in the same `config`.
 3. Switch modes as needed (the choice lives in **the profile directory's** `cordis.patch.yml`, in the `config` of its `- id: interpreter` row, written back by the UI through DSH's config API. Model, mode, length tier, language and allow-list are DSH live fields: a save takes effect in place without restarting the plugin, so rewrites in progress are not interrupted):
 
 | Mode | Behavior |
@@ -176,7 +176,7 @@ Parameters can be tuned in **the profile directory's** `cordis.patch.yml`, under
 | `maxChars` | `40000` | Maximum character count eligible for summarization |
 | `ratio` | `0.35` | Target summary length as a ratio of the original response |
 | `capChars` | `900` | Ceiling on the summary's own length: when the ratio's share exceeds it, the ceiling wins (short answers still keep at least 150 characters) |
-| `length` | `normal` | Length tier: `short` / `normal` / `detailed`. `short` and `detailed` carry their own ratio and ceiling (0.25 / 600, 0.5 / 1600) and override `ratio` and `capChars`; `normal` uses the configured values |
+| `length` | `normal` | Length tier: `normal` / `detailed`. `detailed` carries its own ratio and ceiling (0.5 / 1600) and overrides `ratio` and `capChars`; `normal` uses the configured values |
 | `language` | `auto` | Language of the 速览: `auto` (follow the original) / `zh` (always Chinese) / `en` (always English); a fixed language wins even when the original is in another one |
 | `temperature` | `0.3` | Sampling temperature for the rewrite call |
 | `prompt` | Built-in | Custom rewrite instruction to adjust the output style |

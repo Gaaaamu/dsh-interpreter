@@ -456,22 +456,19 @@ test('a length tier sets the budget, and each tier keeps its own rewrite', async
   const h = await host(echo, { live: true })
   h.setLog([answer()])
   await h.rewrite({ sessionId: 's', seq: 1 }).done
-  // 适中 leaves the row's own numbers alone: 600 * 0.35 = 210.
+  // 普通 leaves the row's own numbers alone: 600 * 0.35 = 210.
   assert.match(prompts[0], /速览请控制在 210 字以内/)
-  // 简短 and 详细 override them instead of rewriting the row.
-  assert.equal((await h.config({ length: 'short' }).done).status, 'ok')
+  // 详细 overrides them instead of rewriting the row.
+  assert.equal((await h.config({ length: 'detailed' }).done).status, 'ok')
   assert.equal(h.state.restarts, 0)
   await h.rewrite({ sessionId: 's', seq: 1 }).done
-  assert.match(prompts[1], /速览请控制在 150 字以内/)
-  await h.config({ length: 'detailed' }).done
-  await h.rewrite({ sessionId: 's', seq: 1 }).done
-  assert.match(prompts[2], /速览请控制在 300 字以内/)
+  assert.match(prompts[1], /速览请控制在 300 字以内/)
   // Each tier remembers its own answer: going back is a cache hit, not a bill.
-  assert.equal((await h.config({ length: 'short' }).done).status, 'ok')
-  assert.equal((await h.rewrite({ sessionId: 's', seq: 1 }).done).text, 'draft 2')
-  await h.config({ length: 'normal' }).done
+  assert.equal((await h.config({ length: 'normal' }).done).status, 'ok')
   assert.equal((await h.rewrite({ sessionId: 's', seq: 1 }).done).text, 'draft 1')
-  assert.equal(h.state.calls, 3)
+  assert.equal(h.state.calls, 2)
+  // The tier that was dropped is no longer a value.
+  assert.equal((await h.config({ length: 'short' }).done).status, 'error')
   await h.cleanup()
 })
 

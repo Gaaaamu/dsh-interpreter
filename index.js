@@ -21,8 +21,8 @@ const CONFIG_PATH = '/interpreter/config'
 /** The three ways a new answer can get a 速览. */
 const MODES = ['global', 'session', 'manual']
 
-/** The length tiers the block offers, shortest first. */
-const LENGTH_TIERS = ['short', 'normal', 'detailed']
+/** The length tiers the block offers: the row's own size, or a longer one. */
+const LENGTH_TIERS = ['normal', 'detailed']
 
 /** The languages a 速览 can be written in: the answer's own, or one fixed. */
 const LANGUAGES = ['auto', 'zh', 'en']
@@ -46,13 +46,11 @@ const MAX_CONCURRENT_REWRITES = 2
 const MIN_BUDGET = 150
 
 /**
- * The three length tiers the block can switch between without a restart. The
- * two ends replace the configured `ratio`/`capChars`; 适中 keeps them, so a
- * reader who never touches the switch sees exactly what the row says.
+ * The length tiers the block can switch between without a restart. 详细 replaces
+ * the configured `ratio`/`capChars` with its own; 普通 keeps them, so a reader
+ * who never touches the switch sees exactly what the row says.
  */
 const LENGTHS = {
-  short: { ratio: 0.25, capChars: 600 },
-  normal: undefined,
   detailed: { ratio: 0.5, capChars: 1600 },
 }
 
@@ -90,8 +88,8 @@ const DEFAULTS = {
   /** Ceiling on that target, in characters: a share of a long answer would
    * otherwise still buy a long summary. */
   capChars: 900,
-  /** 简短 / 适中 / 详细, switched in the block. 适中 (the default) uses the
-   * configured ratio and ceiling; the two ends override them for this reader. */
+  /** 普通 / 详细, switched in the block. 普通 (the default) uses the configured
+   * ratio and ceiling; 详细 overrides them for a reader who wants more. */
   length: 'normal',
   /** 跟随回答 / 固定中文 / 固定英文. 'auto' keeps prompt rule 2 (the answer's own
    * language); a fixed one is said in the user Turn, after that rule. */
@@ -436,7 +434,7 @@ export function apply(ctx, config) {
    * @param options - the settings in force for this call.
    */
   function budgetOf(length, options) {
-    /** 简短 and 详细 replace the row's numbers; 适中 keeps them. */
+    /** 详细 replaces the row's numbers; 普通 keeps them. */
     const tier = LENGTHS[options.length]
     const wantedRatio = tier?.ratio ?? options.ratio
     const wantedCap = tier?.capChars ?? options.capChars

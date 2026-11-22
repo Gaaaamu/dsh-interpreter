@@ -9,7 +9,7 @@ Project page: [dsh-interpreter](https://github.com/Gaaaamu/dsh-interpreter)
 - **Manual (default)**: a reply long enough shows a single 「› 速览」 row. Click it to generate; nothing is spent until you click.
 - **Automatic**: expand the block and switch to 「全部」 or 「本会话」 in the top-right corner. Automatic mode covers only replies written after the switch; opening an old session never backfills it. At most 2 rewrites run at once.
 - **Model**: 「模型」 lists the providers and models configured in DSH. No model is bundled, and nothing is generated until you pick one.
-- **Length**: 「简短 / 适中 / 详细」 in the block switch in one click. This block is rewritten at the new tier, other blocks follow the setting, and any block opened later uses it. Each tier keeps its own cache, so switching back and forth is free.
+- **Length**: 「普通 / 详细」 in the block switch in one click. This block is rewritten at the new tier, other blocks follow the setting, and any block opened later uses it. Each tier keeps its own cache, so switching back and forth is free. 普通 uses the configured ratio and ceiling; 详细 uses 0.5 / 1600 instead.
 - **Language**: 「跟随 / 中文 / 英文」 picks what the 速览 is written in; the default follows the original reply. A fixed language also governs the tightening pass when the draft runs over budget. Each choice keeps its own cache.
 - Folded, the block is one row: 「› 速览 · first sentence」. Expanded, the bottom-right corner shows the tokens this rewrite cost, copies the whole Markdown, and discards the result to redo it.
 
@@ -37,7 +37,7 @@ In the profile's `cordis.patch.yml`, under the `- id: interpreter` row's `config
 | `maxChars` | `40000` | Replies longer than this are skipped |
 | `ratio` | `0.35` | Target length as a share of the original |
 | `capChars` | `900` | Upper bound for the condensed length |
-| `length` | `normal` | Length tier: `short` / `normal` / `detailed`. `short` and `detailed` carry their own ratio and ceiling (0.25 / 600, 0.5 / 1600) and override `ratio` and `capChars`; `normal` uses the configured values |
+| `length` | `normal` | Length tier: `normal` / `detailed`. `detailed` carries its own ratio and ceiling (0.5 / 1600) and overrides `ratio` and `capChars`; `normal` uses the configured values |
 | `language` | `auto` | Language of the 速览: `auto` follows the original, `zh` or `en` pins one |
 | `temperature` | `0.3` | Sampling temperature |
 | `prompt` | built in | The rewrite instruction; change it to change the style |

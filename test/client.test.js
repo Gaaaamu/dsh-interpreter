@@ -93,10 +93,11 @@ test('the mode a Session sees', () => {
 })
 
 test('the length tier a gate names', () => {
-  assert.equal(effectiveLength({ mode: 'manual', sessions: [], length: 'short' }), 'short')
+  assert.equal(effectiveLength({ mode: 'manual', sessions: [], length: 'normal' }), 'normal')
   assert.equal(effectiveLength({ mode: 'manual', sessions: [], length: 'detailed' }), 'detailed')
-  // 适中 is the standing answer: a gate from an older Host, or a typo, reads as it.
+  // 普通 is the standing answer: a gate from an older Host, a dropped tier, or a typo reads as it.
   assert.equal(effectiveLength({ mode: 'manual', sessions: [] }), 'normal')
+  assert.equal(effectiveLength({ length: 'short' }), 'normal')
   assert.equal(effectiveLength({ length: 'huge' }), 'normal')
 })
 

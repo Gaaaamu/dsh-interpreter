@@ -205,11 +205,10 @@ window.__ModuleLoader__.load({
       { value: 'session', label: '本会话' },
       { value: 'manual', label: '手动' },
     ];
-    /** How long the 速览 should be, in the same three words the Host stores. */
-    const LENGTH_LABEL = { short: '简短', normal: '适中', detailed: '详细' };
+    /** How long the 速览 should be, in the same words the Host stores. */
+    const LENGTH_LABEL = { normal: '普通', detailed: '详细' };
     const LENGTH_MENU = [
-      { value: 'short', label: '简短' },
-      { value: 'normal', label: '适中' },
+      { value: 'normal', label: '普通' },
       { value: 'detailed', label: '详细' },
     ];
     /** The answer's own language, or one fixed, in the same three words the Host stores. */
@@ -638,7 +637,7 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * The length tier a gate names, standing in with 适中 for anything else: an
+     * The length tier a gate names, standing in with 普通 for anything else: an
      * older Host, or a row written by hand in a newer vocabulary.
      */
     function effectiveLength(gate) {
@@ -1287,7 +1286,7 @@ window.__ModuleLoader__.load({
           modeOpen ? h('div', { style: cardStyle(), onClick: (event) => event.stopPropagation() }, items) : null);
       }
 
-      /** 「简短 / 适中 / 详细」: how much text a 速览 is worth, switched in place. */
+      /** 「普通 / 详细」: how much text a 速览 is worth, switched in place. */
       let lengthControl = null;
       if (gate !== null) {
         const current = effectiveLength(gate);
