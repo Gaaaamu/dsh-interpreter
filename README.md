@@ -87,9 +87,8 @@ npm test
 按优先级排列。
 
 #### 近期：让结论先到
-1. **流式输出**：改写结果边生成边显示，第一句结论出来即可阅读；超出预算时先展示首版，二次压缩完成后再替换。
-2. **速览里的代码块**：默认折叠，或仅保留第一条需要执行的命令。
-3. **更靠前的位置**：若宿主提供回答顶部插槽，将结论置于回答上方；否则在回答完成时提供「跳到速览」提示。
+1. **速览里的代码块**：默认折叠，或仅保留第一条需要执行的命令。
+2. **更靠前的位置**：若宿主提供回答顶部插槽，将结论置于回答上方；否则在回答完成时提供「跳到速览」提示。
 
 #### 中期：降低理解成本
 1. **模式分层**：全局默认模式移至设置页，块内只保留「本会话自动速览」开关，明确每个控件的作用范围。
@@ -192,9 +191,8 @@ The suite runs on Node's built-in `node:test` with no dependencies: the Host rou
 Listed by priority.
 
 #### Near Term: Put the Conclusion First
-1. **Streaming Output**: Render the rewrite as it is generated, so the bottom line is readable as soon as its first sentence lands; when a draft exceeds the budget, show it first and swap in the tightened version once ready.
-2. **Code Blocks in the Summary**: Fold them by default, or keep only the first command to run.
-3. **Earlier Placement**: If the host exposes a slot above the answer, place the conclusion there; otherwise offer a "jump to summary" hint when the answer finishes.
+1. **Code Blocks in the Summary**: Fold them by default, or keep only the first command to run.
+2. **Earlier Placement**: If the host exposes a slot above the answer, place the conclusion there; otherwise offer a "jump to summary" hint when the answer finishes.
 
 #### Mid Term: Easier to Understand
 1. **Layered Modes**: Move the global default mode to the settings page and keep only an "auto-summarize this session" toggle in the block, so the scope of each control is clear.
