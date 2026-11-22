@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Condensed view",
-    "description": "Appends an independent “Condensed View” block below each assistant reply, compressing prose into a shorter, conclusion-first version while keeping numbers, code, links, commands, and proper nouns intact. The condensed view leaves the original reply intact and stays out of the main conversation context, sending only the current reply for generation. Manual by default—click the block header to generate, or switch to “This session” or “All” auto mode—and you can pick any model configured in DSH inside the block (none bundled), with each generation making one model call that may incur charges.",
+    "description": "Appends a 「速览」 block below each assistant reply: prose compressed into a shorter, conclusion-first version, with numbers, code, paths, and commands kept verbatim. Manual by default—click 「› 速览」 below a reply to generate; switch to 「本会话」 or 「全部」 inside the block for automatic mode, and pick the model that writes it from those configured in DSH. The original reply and the session context stay untouched, and each generation makes one model call that may incur charges.",
     "detail": "docs/DETAIL.md"
   }
 }
