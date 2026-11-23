@@ -662,22 +662,6 @@ export function apply(ctx, config) {
   }
 
   /**
-   * Answer a request the page did not send. These routes read a Session's text
-   * and change this profile's settings, so another local program must not reach
-   * them; the Host's own check covers Host/Origin and the browser's login.
-   * @param req - the request, before any body is read.
-   * @param res - the response, answered here when the check refuses.
-   * @returns true when the request was answered as unauthenticated.
-   */
-  function rejected(req, res) {
-    const rejection = ctx.connection.requestRejection(req)
-    if (rejection === undefined) return false
-    res.statusCode = rejection
-    res.end()
-    return true
-  }
-
-  /**
    * Merge the page's change into the profile's config row. The editor owns that
    * file, validates the candidate and refuses a value a higher layer overrides,
    * so a save that cannot happen is reported instead of assumed.
@@ -723,12 +707,17 @@ export function apply(ctx, config) {
     return kept
   }
 
-  /** The page reads the model list and the model in force. */
+  /**
+   * The page reads the model list and the model in force. Every route here
+   * declares `auth: 'required'`: these handlers read a Session's text and change
+   * this profile's settings, so the Host refuses a request without the browser's
+   * login before any handler runs, and its source check covers Host/Origin.
+   */
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: MODELS_PATH,
+    auth: 'required',
     handler: async (req, res) => {
-      if (rejected(req, res)) return
       if (req.method !== 'GET') {
         reply(res, 405, { status: 'error', message: 'GET only' })
         return
@@ -747,8 +736,8 @@ export function apply(ctx, config) {
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: CONFIG_PATH,
+    auth: 'required',
     handler: async (req, res) => {
-      if (rejected(req, res)) return
       if (req.method === 'GET') {
         const options = settings()
         reply(res, 200, {
@@ -894,8 +883,8 @@ export function apply(ctx, config) {
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: ROUTE_PATH,
+    auth: 'required',
     handler: async (req, res) => {
-      if (rejected(req, res)) return
       if (req.method !== 'POST') {
         reply(res, 405, { status: 'error', message: 'POST only' })
         return
@@ -935,8 +924,8 @@ export function apply(ctx, config) {
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: PROBE_PATH,
+    auth: 'required',
     handler: async (req, res) => {
-      if (rejected(req, res)) return
       if (req.method !== 'POST') {
         reply(res, 405, { status: 'error', message: 'POST only' })
         return

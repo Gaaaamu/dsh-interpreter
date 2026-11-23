@@ -1,6 +1,6 @@
 {
   "name": "dsh-interpreter",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Adds a shorter, easier-to-read 「速览」 rewrite below every finished answer, with one settings dialog for the model, length, language, and cost controls.",
   "keywords": [
     "deepseek-harness",
@@ -37,7 +37,7 @@
     }
   },
   "engines": {
-    "dsh": ">=0.2.2-rc.1 <0.3.0-0"
+    "dsh": ">=0.2.2-rc.3 <0.3.0-0"
   },
   "exports": {
     ".": "./index.js",

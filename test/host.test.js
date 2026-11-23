@@ -30,8 +30,8 @@ function liveRef(value) {
  * row and restarts it, exactly as the Host does, so the next request meets the
  * config the save left behind.
  * @param model - `async function* (request, call)`: what the model streams back.
- * @param options - `rejection`: what the Host's own request check answers;
- *   `live`: hand the plugin live references, as DSH does when its Config loads.
+ * @param options - `live`: hand the plugin live references, as DSH does when its
+ *   Config loads.
  */
 async function host(model, options = {}) {
   const log = { events: {}, nodes: [] }
@@ -46,14 +46,14 @@ async function host(model, options = {}) {
 
   /** Stand-in services every plugin instance shares. */
   const services = {
-    connection: { requestRejection: () => options.rejection },
+    connection: {},
     fiber: { entry: row },
     get: (name) => (name === 'configEditor' ? editor : undefined),
     webServer: {
       /** Like the Host's registry: the returned disposer takes the route away again. */
       register: (route) => {
-        routes[route.path] = route.handler
-        return () => { if (routes[route.path] === route.handler) delete routes[route.path] }
+        routes[route.path] = route
+        return () => { if (routes[route.path] === route) delete routes[route.path] }
       },
     },
     sessions: { get: () => session },
@@ -155,21 +155,21 @@ async function host(model, options = {}) {
         resolve(typeof text === 'string' ? JSON.parse(text) : { status: res.statusCode })
       }
     })
-    const handler = routes[path]
+    const route = routes[path]
     // Between one instance and the next nothing answers, as on the real server.
-    if (handler === undefined) {
+    if (route === undefined) {
       res.statusCode = 404
       res.end()
       return { done, res }
     }
-    handler(req, res)
+    route.handler(req, res)
     setImmediate(() => { req.emit('data', Buffer.from(JSON.stringify(body ?? {}))); req.emit('end') })
     return { done, res }
   }
   const rewrite = (body) => send('/interpreter/rewrite', body)
   const config = (body) => send('/interpreter/config', body)
   const probe = (body) => send('/interpreter/probe', body)
-  return { state, setLog, send, rewrite, config, probe, cleanup: async () => {} }
+  return { state, routes, setLog, send, rewrite, config, probe, cleanup: async () => {} }
 }
 
 /** A model that answers `text`, optionally after `delay` ms, honouring aborts. */
@@ -188,18 +188,17 @@ const answers = (text, delay = 0) => async function* (request, call) {
 
 const answer = (time = Date.now() + 1000) => ({ type: 'assistant/message', data: { turn: 1 }, text: LONG, time })
 
-test('the plugin asks for the connection it authenticates with', () => {
+test('the plugin asks for the connection that admits its routes', () => {
   assert.ok(inject.includes('connection'))
   assert.ok(!inject.includes('profileContext'))
 })
 
-test('a request the Host refuses is answered before its body is read', async () => {
-  const h = await host(answers('ok'), { rejection: 401 })
-  const refused = await h.rewrite({ sessionId: 's', seq: 1 }).done
-  assert.equal(refused.status, 401)
-  assert.equal(h.state.calls, 0)
-  assert.equal((await h.config({ mode: 'global' }).done).status, 401)
-  assert.equal((await h.probe({ sessionId: 's', seq: 1 }).done).status, 401)
+test('every route asks the Host for the browser login', async () => {
+  const h = await host(answers('ok'))
+  for (const path of ['/interpreter/models', '/interpreter/config', '/interpreter/rewrite', '/interpreter/probe']) {
+    assert.equal(h.routes[path]?.kind, 'exact', path)
+    assert.equal(h.routes[path]?.auth, 'required', path)
+  }
 })
 
 test('an answer the reader stopped is not rewritten unasked', async () => {

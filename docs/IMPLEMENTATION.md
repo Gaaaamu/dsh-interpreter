@@ -95,7 +95,7 @@
 
 ### Host 侧（`index.js`）
 
-注册四个本地路由，全部先过 `ctx.connection.requestRejection(req)` 鉴权（未通过直接返回 401/403，不读请求体）；三个 POST 路由仅接受 `application/json`：
+注册四个本地路由，全部声明 `auth: 'required'`：准入由宿主 `webServer` 在 handler 之前完成（凭据缺失 401、来源不受信 403、无准入决策 503），handler 只处理已登录请求，也不读未通过请求的体；三个 POST 路由仅接受 `application/json`：
 
 - `POST /interpreter/rewrite`：按事件的 `data.turn` 与 `turn/start` 在当前轮次内提取落盘的 assistant 文本（不跨轮借用），经并发限流器（上限 2）调用 `ctx.llm.stream` 改写。流以 `stop` 以外的原因结束一律判为失败且不缓存。缓存键为 `${provider}/${model}/${length}/${language}@${revision}:${sessionId}:${seq}`（最多 500 条）；同一轮并发请求共享单次调用，仅当全部等待者断开连接才中止上游流。自动请求（`auto: true`）会额外检查 `interrupted`、`autoSince`（取 `startedAt` 与配置 `autoSince` 较大值）及当日 token 限额（`skip: budget`）。
 - `POST /interpreter/probe`：读取同一份轮次日志判断是否满足正文存在与 `minChars`–`maxChars` 区间，返回 `ok` 或 `too-short` / `too-long` / `no-answer`；不调模型、不进缓存、不看 `autoSince`。
