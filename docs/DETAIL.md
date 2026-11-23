@@ -16,11 +16,11 @@ Project page: [dsh-interpreter](https://github.com/Gaaaamu/dsh-interpreter)
 
 ## The settings dialog
 
-The menu's last row, 「设置」, opens 「速览设置」 as a small panel over the conversation, drawn with the app's own Modal (not a panel switch of the plugin's own, and not DSH's Settings): the page behind dims and stays exactly where it was. The dialog carries every row the bundle owns: model, 「详略」, 「语言」, the prompt, the shortest / longest answer, the 普通-tier ratio and ceiling, temperature, and the daily token ceiling. 「保存」 sends the whole page in one write and leaves the dialog open with a 「已保存」 note beside the button; Esc, the × in the title bar, or a click on the dimmed page closes it.
+The menu's last row, 「设置」, opens 「速览设置」 as a small panel over the conversation, drawn with the app's own Modal (not a panel switch of the plugin's own, and not DSH's Settings): the page behind dims and stays exactly where it was. The dialog carries every row the bundle owns: model, 「详略」, 「语言」, the prompt (with one-click restore default when customized), trigger length bounds (`min` / `max`), the 普通-tier `ratio` and `cap`, `Temperature`, and the daily token ceiling. 「保存」 stays disabled until something changes, writes the whole page in one request, and turns into a disabled 「已保存」 state while keeping the dialog open; Esc, the × in the title bar, or a click on the dimmed page closes it.
 
 - Every editable field is a live field, so a save takes effect in place: no plugin restart, and no interruption to a rewrite in flight. A prompt or number change makes the next click generate afresh, while a tier, language or model switch keeps its own cache.
 - 「自动速览」 and its session allow-list are deliberately not on this page: scope is per session and stays in the block's own menu, so a stale copy of the allow-list can never overwrite another block's change.
-- The page checks its own numbers before sending (blank fields, out-of-range values, shortest > longest) and the Host re-checks them, so a mistyped row answers beside the field instead of after a failed round trip.
+- The page checks its own numbers before sending (blank fields, out-of-range values, shortest > longest) and the Host re-checks them, surfacing any error directly above the dialog footer instead of after a failed round trip.
 
 
 ## When it appears

@@ -564,6 +564,7 @@ test('the gate reports every row the settings page edits', async () => {
     dailyTokenCap: 0,
   })
   assert.match(gate.settings.prompt, /速览/)
+  assert.equal(gate.defaultPrompt, gate.settings.prompt)
   await h.cleanup()
 })
 

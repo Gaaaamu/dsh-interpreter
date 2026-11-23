@@ -142,36 +142,86 @@ window.__ModuleLoader__.load({
 @keyframes ra-reveal-second{0%,33.32%{opacity:0}33.33%,to{opacity:1}}
 @keyframes ra-reveal-third{0%,66.65%{opacity:0}66.66%,to{opacity:1}}
 @media(prefers-reduced-motion:reduce){.ra-wait-ghost{display:none}.ra-wait-sweep,.ra-wait-highlight,.ra-dot2,.ra-dot3{animation:none;opacity:1}}
-/* The settings dialog is the app's own Modal: a small card over a dimmed
-   conversation, with one scrolling column of rows and the save button in the
-   footer. The doubled selectors beat the Modal's card geometry, which is a
-   single class in a sheet that may arrive after this one. The height cap is
-   what keeps it a panel: past it the rows scroll instead of the card growing
-   to the whole window. The Modal's content element wraps both the title bar
-   and the body, so only its last child — the body, which has no class to hook
-   — scrolls, and the title and close button stay put. */
-.ra-set-dialog.ra-set-dialog{width:min(560px,100%);max-height:min(760px,100%)}
+/* The settings dialog is the app's own Modal: a compact card over a dimmed
+   conversation, with grouped rows and a fixed header / footer. The doubled
+   selectors beat the Modal's card geometry, which is a single class in a sheet
+   that may arrive after this one. The Modal's content element wraps both the
+   title bar and the body, so only its last child — the body, which has no
+   class to hook — scrolls, and the title and close button stay put. */
+.ra-set-dialog.ra-set-dialog{width:min(520px,calc(100vw - 32px));max-width:min(520px,calc(100vw - 32px));max-height:min(740px,calc(100vh - 64px));-webkit-app-region:no-drag}
 .ra-set-content.ra-set-content{display:flex;flex-direction:column;min-height:0;overflow:hidden}
-.ra-set-content.ra-set-content > div:last-child{flex:1 1 auto;min-height:0;gap:22px;overflow-y:auto;overscroll-behavior:contain}
+.ra-set-content.ra-set-content > div:last-child{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+.ra-set-body{display:flex;flex-direction:column;gap:18px;padding:2px 0 4px}
+.ra-set-section{display:flex;flex-direction:column;gap:8px}
+.ra-set-sec-bar{display:flex;align-items:center;gap:8px;padding:0 2px}
+.ra-set-head{font-size:12px;font-weight:500;color:var(--dsw-alias-label-secondary,inherit)}
+.ra-set-sec-meta{margin-left:auto;display:inline-flex;align-items:center;gap:10px;font-size:11px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-caption,var(--dsw-alias-label-secondary,inherit))}
+.ra-set-count[data-over=true]{color:var(--dsw-alias-state-error-primary,#d94a4a)}
+.ra-set-reset{padding:0;border:0;background:transparent;cursor:pointer;font:inherit;font-size:11px;color:var(--dsw-alias-label-secondary,inherit);transition:color 120ms ease}
+.ra-set-reset:hover{color:var(--dsw-alias-label-primary,inherit);text-decoration:underline;text-underline-offset:2px}
+.ra-set-card{display:flex;flex-direction:column;border-radius:12px;background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.07));border:.5px solid var(--dsw-alias-border-l1,rgba(128,128,128,.16))}
+.ra-set-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px 14px;min-height:44px;padding:8px 14px;box-sizing:border-box;transition:opacity 140ms ease}
+.ra-set-row+.ra-set-row{border-top:.5px solid var(--dsw-alias-border-l1,rgba(128,128,128,.14))}
+.ra-set-row[data-dim=true]{opacity:.5}
+.ra-set-row[data-dim=true]:hover,.ra-set-row[data-dim=true]:focus-within{opacity:1}
+.ra-set-label{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:400;color:var(--dsw-alias-label-primary,inherit);white-space:nowrap}
+.ra-set-tip{position:relative;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--dsw-alias-label-caption,var(--dsw-alias-label-secondary,inherit));cursor:default;outline:none;transition:color 120ms ease}
+.ra-set-tip svg{opacity:.68;transition:opacity 120ms ease}
+.ra-set-tip:hover,.ra-set-tip:focus-visible{color:var(--dsw-alias-label-primary,inherit)}
+.ra-set-tip:hover svg,.ra-set-tip:focus-visible svg{opacity:1}
+.ra-set-tip-pop{position:absolute;bottom:calc(100% + 7px);left:-8px;z-index:40;width:max-content;max-width:252px;padding:7px 10px;border-radius:8px;background:var(--dsw-alias-bg-layer-3,#363639);border:.5px solid var(--dsw-alias-border-l2,rgba(128,128,128,.3));box-shadow:var(--dsw-elevation-prominent,0 8px 24px rgba(0,0,0,.38));font-size:12px;font-weight:400;line-height:1.5;white-space:normal;text-align:left;color:var(--dsw-alias-label-primary,inherit);pointer-events:none;visibility:hidden;opacity:0;transform:translateY(3px);transition:opacity 110ms ease,transform 110ms ease,visibility 0s linear 110ms}
+.ra-set-tip:hover .ra-set-tip-pop,.ra-set-tip:focus-visible .ra-set-tip-pop{visibility:visible;opacity:1;transform:translateY(0);transition:opacity 110ms ease,transform 110ms ease,visibility 0s}
+.ra-set-ctl{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;min-width:0;flex:1 1 auto}
+.ra-set-pair{display:inline-flex;align-items:center;gap:6px}
+.ra-set-pair+.ra-set-pair{margin-left:4px}
+.ra-set-inline-lbl{font-size:12px;font-family:var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-secondary,inherit);white-space:nowrap}
+.ra-set-badge{font-size:11px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-caption,var(--dsw-alias-label-secondary,inherit));white-space:nowrap}
+.ra-set-num-wrap{display:inline-flex;align-items:center;height:30px;padding:0 8px;gap:4px;box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l2,rgba(128,128,128,.26));border-radius:var(--dsw-radius-sm,7px);background:var(--dsw-alias-bg-layer-1,rgba(128,128,128,.08));transition:border-color 120ms ease,box-shadow 120ms ease}
+.ra-set-num-wrap:focus-within{border-color:var(--dsw-alias-label-secondary,rgba(160,160,160,.55));box-shadow:0 0 0 2px var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.16))}
+.ra-set-num{width:54px;min-width:0;padding:0;border:0;outline:none;background:transparent;font:inherit;font-size:13px;font-variant-numeric:tabular-nums;text-align:right;color:var(--dsw-alias-label-primary,inherit)}
+.ra-set-num[data-w=xs]{width:42px}
+.ra-set-num[data-w=sm]{width:50px}
+.ra-set-num[data-w=md]{width:66px}
+.ra-set-num[data-w=lg]{width:76px}
+.ra-set-unit{flex:none;font-size:12px;color:var(--dsw-alias-label-caption,var(--dsw-alias-label-secondary,inherit));user-select:none}
+.ra-set-seg{display:inline-flex;align-items:center;gap:2px;padding:2px;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12));border:.5px solid var(--dsw-alias-border-l1,rgba(128,128,128,.16))}
+.ra-set-seg-btn{height:26px;padding:0 12px;border:0;border-radius:6px;background:transparent;cursor:pointer;font:inherit;font-size:12px;font-weight:400;color:var(--dsw-alias-label-secondary,inherit);transition:background 120ms ease,color 120ms ease,box-shadow 120ms ease;white-space:nowrap}
+.ra-set-seg-btn:hover{color:var(--dsw-alias-label-primary,inherit)}
+.ra-set-seg-btn[data-on=true]{background:var(--dsw-alias-bg-layer-3,rgba(255,255,255,.16));color:var(--dsw-alias-label-primary,inherit);font-weight:500;box-shadow:0 1px 2px rgba(0,0,0,.12),0 0 0 .5px var(--dsw-alias-border-l2,rgba(128,128,128,.24))}
+.ra-set-sel{position:relative;flex:0 1 268px;min-width:160px;max-width:268px}
+.ra-set-sel-btn{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;height:30px;padding:0 9px 0 10px;box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l2,rgba(128,128,128,.26));border-radius:var(--dsw-radius-sm,7px);background:var(--dsw-alias-bg-layer-1,rgba(128,128,128,.08));cursor:pointer;font:inherit;font-size:13px;color:var(--dsw-alias-label-primary,inherit);text-align:left;transition:border-color 120ms ease,box-shadow 120ms ease}
+.ra-set-sel-btn:hover{border-color:var(--dsw-alias-border-l3,rgba(128,128,128,.38))}
+.ra-set-sel-btn[aria-expanded=true]{border-color:var(--dsw-alias-label-secondary,rgba(160,160,160,.55));box-shadow:0 0 0 2px var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.16))}
+.ra-set-sel-val{display:flex;align-items:baseline;gap:6px;min-width:0;flex:1 1 auto;overflow:hidden}
+.ra-set-sel-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ra-set-sel-name[data-empty=true]{color:var(--dsw-alias-label-caption,var(--dsw-alias-label-secondary,inherit))}
+.ra-set-sel-prov{flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--dsw-alias-label-caption,var(--dsw-alias-label-secondary,inherit))}
+.ra-set-sel-caret{flex:none;display:inline-flex;color:var(--dsw-alias-label-secondary,inherit);transition:transform 140ms ease}
+.ra-set-sel-btn[aria-expanded=true] .ra-set-sel-caret{transform:rotate(180deg)}
+.ra-set-sel-menu{position:absolute;top:calc(100% + 6px);right:0;min-width:100%;max-width:min(340px,80vw);max-height:240px;overflow-y:auto;overscroll-behavior:contain;z-index:30;padding:4px;box-sizing:border-box;border-radius:11px;background:var(--dsw-alias-bg-layer-2,#2c2c2e);border:.5px solid var(--dsw-alias-border-l2,rgba(128,128,128,.24));box-shadow:var(--dsw-elevation-prominent,0 8px 24px rgba(0,0,0,.28))}
+.ra-set-sel-grp{padding:6px 10px 3px;font-size:11px;font-weight:500;color:var(--dsw-alias-label-caption,var(--dsw-alias-label-secondary,inherit));user-select:none}
+.ra-set-sel-grp:not(:first-child){margin-top:4px;padding-top:7px;border-top:.5px solid var(--dsw-alias-border-l1,rgba(128,128,128,.16))}
+.ra-set-sel-opt{display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;border:0;border-radius:7px;background:transparent;cursor:pointer;font:inherit;font-size:13px;text-align:left;color:var(--dsw-alias-label-secondary,inherit);transition:background 100ms ease,color 100ms ease}
+.ra-set-sel-opt:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.14));color:var(--dsw-alias-label-primary,inherit)}
+.ra-set-sel-opt[data-on=true]{color:var(--dsw-alias-label-primary,inherit);font-weight:500}
+.ra-set-sel-opt-text{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ra-set-sel-empty{padding:12px 10px;font-size:12px;text-align:center;color:var(--dsw-alias-label-secondary,inherit)}
+.ra-set-slider{flex:0 1 132px;width:132px;height:4px;-webkit-appearance:none;appearance:none;border-radius:999px;background:var(--dsw-alias-border-l2,rgba(128,128,128,.28));outline:none;cursor:pointer}
+.ra-set-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;background:var(--dsw-alias-label-primary,#e5e5e5);border:2px solid var(--dsw-alias-bg-layer-2,#262626);box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform 100ms ease}
+.ra-set-slider::-webkit-slider-thumb:hover{transform:scale(1.12)}
+.ra-set-area{box-sizing:border-box;width:100%;min-height:144px;max-height:320px;resize:vertical;padding:11px 13px;border:.5px solid var(--dsw-alias-border-l2,rgba(128,128,128,.22));border-radius:12px;outline:none;font-family:var(--dsw-font-family,system-ui,-apple-system,sans-serif);font-size:13px;line-height:1.65;color:var(--dsw-alias-label-primary,inherit);background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.07));transition:border-color 120ms ease,box-shadow 120ms ease,background 120ms ease}
+.ra-set-area::-webkit-scrollbar,.ra-set-sel-menu::-webkit-scrollbar,.ra-set-content.ra-set-content > div:last-child::-webkit-scrollbar{width:6px;height:6px}
+.ra-set-area::-webkit-scrollbar-thumb,.ra-set-sel-menu::-webkit-scrollbar-thumb,.ra-set-content.ra-set-content > div:last-child::-webkit-scrollbar-thumb{border-radius:999px;background:var(--dsw-alias-border-l2,rgba(128,128,128,.32))}
+.ra-set-area::-webkit-scrollbar-track,.ra-set-sel-menu::-webkit-scrollbar-track,.ra-set-content.ra-set-content > div:last-child::-webkit-scrollbar-track{background:transparent}
+.ra-set-area:focus{border-color:var(--dsw-alias-label-secondary,rgba(160,160,160,.55));background:var(--dsw-alias-bg-layer-1,rgba(128,128,128,.08));box-shadow:0 0 0 2px var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.16))}
+.ra-set-foot{display:flex;flex-direction:column;gap:10px;width:100%}
 .ra-set-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0}
-.ra-set-note{margin-right:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--dsw-alias-label-secondary,inherit)}
-.ra-set-group{display:flex;flex-direction:column;gap:10px}
-.ra-set-head{font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--dsw-alias-label-caption,inherit)}
-.ra-set-hint{margin:0;font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary,inherit)}
-.ra-set-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-.ra-set-label{flex:1 1 auto;min-width:120px;font-size:13px;color:var(--dsw-alias-label-primary,inherit)}
-.ra-set-sub{display:block;margin-top:2px;font-size:12px;color:var(--dsw-alias-label-secondary,inherit)}
-.ra-set-field{box-sizing:border-box;padding:6px 9px;border:.5px solid var(--dsw-alias-border-l2,rgba(128,128,128,.28));border-radius:var(--dsw-radius-sm,6px);outline:none;font:inherit;font-size:13px;color:var(--dsw-alias-label-primary,inherit);background:var(--dsw-alias-bg-layer-1,rgba(128,128,128,.1));transition:border-color 120ms ease}
-.ra-set-field:focus{border-color:var(--dsw-alias-state-business-primary,#4176e6)}
-.ra-set-field[data-width=num]{width:112px}
-.ra-set-field[data-width=wide]{width:100%;max-width:340px}
-.ra-set-area{box-sizing:border-box;width:100%;min-height:170px;resize:vertical;padding:10px 12px;border:.5px solid var(--dsw-alias-border-l2,rgba(128,128,128,.28));border-radius:var(--dsw-radius-md,8px);outline:none;font:var(--dsw-font-markdown-code,13px/20px ui-monospace);font-family:var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-primary,inherit);background:var(--dsw-alias-bg-layer-1,rgba(128,128,128,.1));transition:border-color 120ms ease}
-.ra-set-area:focus{border-color:var(--dsw-alias-state-business-primary,#4176e6)}
-.ra-set-chips{display:flex;gap:8px;flex-wrap:wrap}
-.ra-set-chip{padding:5px 14px;border:.5px solid var(--dsw-alias-border-l2,rgba(128,128,128,.28));border-radius:999px;background:transparent;cursor:pointer;font:inherit;font-size:13px;color:var(--dsw-alias-label-secondary,inherit);transition:background 120ms ease,color 120ms ease,border-color 120ms ease}
-.ra-set-chip:hover{color:var(--dsw-alias-label-primary,inherit)}
-.ra-set-chip[data-on=true]{border-color:transparent;background:var(--dsw-alias-bg-layer-3,rgba(128,128,128,.24));color:var(--dsw-alias-label-primary,inherit);font-weight:600}
-.ra-set-error{margin:0;padding:10px 12px;border-radius:var(--dsw-radius-md,8px);font-size:13px;line-height:1.6;background:var(--dsw-alias-state-error-bg,rgba(220,60,60,.12));color:var(--dsw-alias-state-error-primary,#d94a4a)}
+.ra-set-error{margin:0;padding:8px 12px;border-radius:var(--dsw-radius-md,8px);font-size:12px;line-height:1.5;background:var(--dsw-alias-state-error-bg,rgba(220,60,60,.12));color:var(--dsw-alias-state-error-primary,#d94a4a)}
+.ra-set-failed{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:6px 0}
+.ra-set-skel-stack{display:flex;flex-direction:column;gap:16px;padding:4px 0}
+.ra-set-skel{border-radius:12px;background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.08));animation:ra-set-pulse 1.4s ease-in-out infinite}
+@keyframes ra-set-pulse{0%,100%{opacity:.5}50%{opacity:.9}}
+@media(prefers-reduced-motion:reduce){.ra-set-skel{animation:none}}
 `;
     /**
      * The three glyphs a link can wear, taken from the app's own icon data so a link
@@ -247,9 +297,9 @@ window.__ModuleLoader__.load({
     /** The answer's own language, or one fixed, in the same three words the Host stores. */
     const LANG_LABEL = { auto: '跟随', zh: '中文', en: '英文' };
     const LANG_MENU = [
-      { value: 'auto', label: '跟随回答' },
-      { value: 'zh', label: '固定中文' },
-      { value: 'en', label: '固定英文' },
+      { value: 'auto', label: '跟随原文' },
+      { value: 'zh', label: '中文' },
+      { value: 'en', label: '英文' },
     ];
     /** The ⋯ in the corner: quieter than the copy button, never quite gone. */
     const MORE_BUTTON = { ...ICON_BUTTON, opacity: 0.55 };
@@ -861,11 +911,14 @@ window.__ModuleLoader__.load({
      * rule is scoped under `ra-` classes, so nothing in it reaches the app.
      */
     function ensureStyle() {
-      if (typeof document === 'undefined' || document.getElementById(STYLE_ID) !== null) return;
-      const sheet = document.createElement('style');
-      sheet.id = STYLE_ID;
-      sheet.textContent = CSS;
-      document.head.appendChild(sheet);
+      if (typeof document === 'undefined') return;
+      let sheet = document.getElementById(STYLE_ID);
+      if (sheet === null) {
+        sheet = document.createElement('style');
+        sheet.id = STYLE_ID;
+        document.head.appendChild(sheet);
+      }
+      if (sheet.textContent !== CSS) sheet.textContent = CSS;
     }
 
     /**
@@ -1589,42 +1642,94 @@ window.__ModuleLoader__.load({
       return { ...rows, prompt: draft.prompt };
     }
 
+    /** Quiet info glyph whose explanation stays hidden until hovered or focused. */
+    function InfoTip({ text }) {
+      return h('span', { className: 'ra-set-tip', tabIndex: 0, 'aria-label': text },
+        h('svg', {
+          width: 13, height: 13, viewBox: '0 0 16 16', fill: 'none',
+          stroke: 'currentColor', strokeWidth: 1.4,
+          strokeLinecap: 'round', strokeLinejoin: 'round',
+          'aria-hidden': 'true',
+        },
+          h('circle', { cx: 8, cy: 8, r: 6.2 }),
+          h('path', { d: 'M8 7.3v3.4' }),
+          h('circle', { cx: 8, cy: 5.1, r: 0.55, fill: 'currentColor', stroke: 'none' })),
+        h('span', { className: 'ra-set-tip-pop', role: 'tooltip' }, text));
+    }
+
+    /** Downward caret for the custom model selector. */
+    function CaretIcon() {
+      return h('svg', {
+        width: 12, height: 12, viewBox: '0 0 16 16', fill: 'none',
+        stroke: 'currentColor', strokeWidth: 1.6,
+        strokeLinecap: 'round', strokeLinejoin: 'round',
+        'aria-hidden': 'true',
+      }, h('path', { d: 'M4.2 6.2 8 10l3.8-3.8' }));
+    }
+
+    /**
+     * Resolve a `provider::model` value against the loaded catalog so the trigger
+     * shows human-readable names without falling back to an empty string when a
+     * saved model is temporarily absent from the catalog.
+     */
+    function resolveModelLabel(value, providers) {
+      if (value === '') return { empty: true, name: '选择模型', provider: '' };
+      const [providerId, modelId] = value.split('::');
+      for (const provider of providers ?? []) {
+        if (provider.id !== providerId) continue;
+        for (const candidate of provider.models) {
+          if (candidate.id === modelId) return { empty: false, name: candidate.name, provider: provider.name };
+        }
+      }
+      return { empty: false, name: modelId ?? value, provider: providerId ?? '' };
+    }
+
     /**
      * The plugin's own settings dialog. The ⋯ menu edits one switch at a time in a
-     * popover; this dialog puts every row the bundle owns in one place, including
-     * the prompt and the budget numbers a popover has no room for. It holds nothing
-     * Session-scoped: the automatic-rewrite scope stays in the block's own menu.
-     * It lives in `shell.overlay`, so it opens over whatever the page shows and the
-     * conversation underneath stays exactly where it was.
+     * popover; this dialog puts every global row the bundle owns in one place,
+     * grouped into core choices, prompt, and generation parameters. It lives in
+     * `shell.overlay`, so it opens over the conversation without moving it.
      */
     function SettingsDialog() {
       const open = useSettingsOpen();
       const [state, setState] = useState({ kind: 'loading' });
       const [draft, setDraft] = useState(null);
+      const [initial, setInitial] = useState(null);
       const [model, setModel] = useState('');
       const [models, setModels] = useState(null);
+      const [modelOpen, setModelOpen] = useState(false);
       const [length, setLength] = useState('normal');
       const [language, setLanguage] = useState('auto');
+      const [defaultPrompt, setDefaultPrompt] = useState('');
+      const [tokensToday, setTokensToday] = useState(0);
       const [saving, setSaving] = useState(false);
       const [error, setError] = useState('');
-      const [note, setNote] = useState('');
+      const [saved, setSaved] = useState(false);
 
       /** The rows and the catalog arrive together: the model row needs both. */
       const load = () => {
         setState({ kind: 'loading' });
+        setModelOpen(false);
         setError('');
-        setNote('');
+        setSaved(false);
         Promise.all([requestGate(), requestModels()]).then(
           ([gate, catalog]) => {
             if (gate.status !== 'ok') throw new Error(gate.message ?? '读不到设置');
             if (catalog.status !== 'ok') throw new Error(catalog.message ?? '读不到模型清单');
-            setDraft(draftOf(gate.settings));
-            setLength(effectiveLength(gate));
-            setLanguage(effectiveLanguage(gate));
+            const nextDraft = draftOf(gate.settings);
+            const nextLength = effectiveLength(gate);
+            const nextLanguage = effectiveLanguage(gate);
             // No model chosen yet is a real state: the row must stay empty rather
             // than become a `::` pair the Host would refuse.
-            setModel(catalog.provider === '' || catalog.model === '' ? '' : `${catalog.provider}::${catalog.model}`);
+            const nextModel = catalog.provider === '' || catalog.model === '' ? '' : `${catalog.provider}::${catalog.model}`;
+            setDraft(nextDraft);
+            setLength(nextLength);
+            setLanguage(nextLanguage);
+            setModel(nextModel);
             setModels({ providers: catalog.providers });
+            setDefaultPrompt(typeof gate.defaultPrompt === 'string' ? gate.defaultPrompt : '');
+            setTokensToday(typeof gate.tokensToday === 'number' && Number.isFinite(gate.tokensToday) ? gate.tokensToday : 0);
+            setInitial({ draft: nextDraft, model: nextModel, length: nextLength, language: nextLanguage });
             setState({ kind: 'ready' });
           },
           (failure) => setState({
@@ -1637,19 +1742,48 @@ window.__ModuleLoader__.load({
       // The sheet goes in once; the rows are read every time the dialog is raised,
       // so it never shows a stale copy of a row saved from elsewhere since.
       useEffect(() => { ensureStyle(); }, []);
-      useEffect(() => { if (open) load(); }, [open]);
+      useEffect(() => {
+        if (open) load();
+        else setModelOpen(false);
+      }, [open]);
 
-      /** A field being retyped: the note and the complaint go as soon as it changes. */
+      // Close the custom model dropdown on outside click or Esc without dismissing
+      // the surrounding Modal on the first Esc press.
+      useEffect(() => {
+        if (!modelOpen) return undefined;
+        const close = () => setModelOpen(false);
+        const onKey = (event) => {
+          if (event.key === 'Escape') {
+            event.stopPropagation();
+            setModelOpen(false);
+          }
+        };
+        document.addEventListener('click', close);
+        window.addEventListener('keydown', onKey, true);
+        return () => {
+          document.removeEventListener('click', close);
+          window.removeEventListener('keydown', onKey, true);
+        };
+      }, [modelOpen]);
+
+      const dirty = initial !== null && draft !== null && (
+        model !== initial.model
+        || length !== initial.length
+        || language !== initial.language
+        || Object.keys(initial.draft).some((key) => draft[key] !== initial.draft[key])
+      );
+
+      /** A field being retyped: the saved state and complaint clear as soon as it changes. */
       const edit = (field) => (event) => {
         const value = event.target.value;
         setDraft((current) => ({ ...current, [field]: value }));
         setError('');
-        setNote('');
+        setSaved(false);
       };
 
       /** Save every row at once: one write, one answer, and no restart in between. */
       const save = () => {
-        if (saving) return;
+        if (saving || state.kind !== 'ready' || !dirty) return;
         let rows;
         try {
           rows = readDraft(draft);
@@ -1659,24 +1793,26 @@ window.__ModuleLoader__.load({
         }
         setSaving(true);
         setError('');
-        setNote('');
+        setSaved(false);
         const [provider, id] = model.split('::');
         saveGate({
           ...rows,
           length,
           language,
           // The pair is the one thing the Host will not take half of.
-          ...(provider === undefined || id === undefined ? null : { provider, model: id }),
+          ...(model === '' || !provider || !id ? null : { provider, model: id }),
         })
           .then((result) => {
             if (result.status !== 'ok') throw new Error(result.message ?? '没保存上');
+            const nextDraft = result.settings !== undefined ? draftOf(result.settings) : draft;
             setSaving(false);
             savedModel = model;
             // The reply is every row as it now stands: open blocks read it from the
             // shared gate, so their menus are current the moment the reader returns.
             publishGate(result);
-            if (result.settings !== undefined) setDraft(draftOf(result.settings));
-            setNote('已保存');
+            setDraft(nextDraft);
+            setInitial({ draft: nextDraft, model, length, language });
+            setSaved(true);
           })
           .catch((failure) => {
             setSaving(false);
@@ -1684,101 +1820,225 @@ window.__ModuleLoader__.load({
           });
       };
 
-      /** One pill per choice, the one in force filled in. */
-      const chips = (menu, current, choose) => h('div', { className: 'ra-set-chips' },
+      // Allow Cmd/Ctrl+S or Cmd/Ctrl+Enter to save while the dialog is open.
+      useEffect(() => {
+        if (!open || state.kind !== 'ready') return undefined;
+        const onKey = (event) => {
+          if (!(event.metaKey || event.ctrlKey)) return;
+          if (event.key.toLowerCase() === 's' || event.key === 'Enter') {
+            event.preventDefault();
+            save();
+          }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      });
+
+      /** Tactile segmented switcher: one track, active item lifted. */
+      const segment = (menu, current, choose) => h('div', { className: 'ra-set-seg', role: 'radiogroup' },
         menu.map((item) => h('button', {
           key: item.value,
-          className: 'ra-set-chip',
+          type: 'button',
+          role: 'radio',
+          'aria-checked': item.value === current,
+          className: 'ra-set-seg-btn',
           'data-on': item.value === current ? 'true' : 'false',
           onClick: () => {
             choose(item.value);
             setError('');
-            setNote('');
+            setSaved(false);
           },
         }, item.label)));
 
-      /** A labelled row: the words on the left, the control on the right. */
-      const line = (key, label, control, sub) => h('div', { key, className: 'ra-set-row' },
+      /** Compact numeric box with an optional embedded trailing unit. */
+      const numBox = (field, width, opts = {}) => h('label', { className: 'ra-set-num-wrap' },
+        h('input', {
+          className: 'ra-set-num',
+          'data-w': width,
+          type: 'text',
+          inputMode: opts.mode ?? 'numeric',
+          spellCheck: false,
+          'aria-label': opts.label,
+          value: draft?.[field] ?? '',
+          onChange: edit(field),
+        }),
+        opts.unit === undefined ? null : h('span', { className: 'ra-set-unit' }, opts.unit));
+
+      /** One aligned row inside a grouped settings card. */
+      const cardRow = (key, label, control, opts = {}) => h('div', {
+        key,
+        className: 'ra-set-row',
+        'data-dim': opts.dim ? 'true' : undefined,
+      },
         h('span', { className: 'ra-set-label' },
           label,
-          sub === undefined ? null : h('span', { className: 'ra-set-sub' }, sub)),
-        control);
+          opts.tip === undefined ? null : h(InfoTip, { text: opts.tip })),
+        h('div', { className: 'ra-set-ctl' }, control));
 
-      /** A number the page treats as text until it is saved. */
-      const numberField = (key, label, sub) => line(key, label, h('input', {
-        className: 'ra-set-field',
-        'data-width': 'num',
-        type: 'text',
-        inputMode: 'decimal',
-        spellCheck: false,
-        value: draft?.[key] ?? '',
-        onChange: edit(key),
-      }), sub);
-
-      /** What the page shows under its title bar. */
+      /** What the dialog renders inside the Modal body. */
       let body;
       if (state.kind === 'loading') {
-        body = h('p', { className: 'ra-set-hint' }, '读取设置…');
+        body = h('div', { className: 'ra-set-skel-stack', 'aria-busy': 'true' },
+          h('div', { className: 'ra-set-skel', style: { height: 134 } }),
+          h('div', { className: 'ra-set-skel', style: { height: 164 } }),
+          h('div', { className: 'ra-set-skel', style: { height: 178 } }));
       } else if (state.kind === 'failed') {
-        body = [
-          h('p', { key: 'error', className: 'ra-set-error' }, state.message),
-          h('div', { key: 'retry' }, h(Button, { variant: 'outline', onClick: load }, '重试')),
-        ];
+        body = h('div', { className: 'ra-set-failed' },
+          h('p', { className: 'ra-set-error' }, state.message),
+          h(Button, { variant: 'outline', onClick: load }, '重试'));
       } else {
-        body = [
-          error === '' ? null : h('p', { key: 'error', className: 'ra-set-error' }, error),
-          h('section', { key: 'model', className: 'ra-set-group' },
-            h('div', { className: 'ra-set-head' }, '模型'),
-            h('p', { className: 'ra-set-hint' }, '用哪个模型写速览，取自当前可用的模型清单。'),
-            h('div', { className: 'ra-set-row' }, h('select', {
-              className: 'ra-set-field',
-              'data-width': 'wide',
-              value: model,
-              onChange: (event) => { setModel(event.target.value); setError(''); setNote(''); },
-            },
-              h('option', { value: '' }, '尚未选择'),
-              (models?.providers ?? []).map((provider) => h('optgroup', { key: provider.id, label: provider.name },
-                provider.models.map((candidate) => h('option', {
-                  key: candidate.id,
-                  value: `${provider.id}::${candidate.id}`,
-                }, candidate.name))))))),
-          h('section', { key: 'shape', className: 'ra-set-group' },
-            h('div', { className: 'ra-set-head' }, '详略与语言'),
-            h('p', { className: 'ra-set-hint' }, '自动整理的范围（全部、本会话、手动）按会话算，仍在每条速览右上角的 ⋯ 里切换。'),
-            line('length', '详略', chips(LENGTH_MENU, length, setLength)),
-            line('language', '语言', chips(LANG_MENU, language, setLanguage))),
-          h('section', { key: 'prompt', className: 'ra-set-group' },
-            h('div', { className: 'ra-set-head' }, '提示词'),
-            h('p', { className: 'ra-set-hint' }, `交给模型的要求，决定速览怎么写。最多 ${MAX_PROMPT_CHARS} 字。`),
+        const providers = models?.providers ?? [];
+        const resolved = resolveModelLabel(model, providers);
+        const showProv = !resolved.empty && resolved.provider !== '' && providers.length > 1
+          && !resolved.name.toLowerCase().startsWith(`${resolved.provider.toLowerCase()}/`);
+        const modelPicker = h('div', {
+          className: 'ra-set-sel',
+          onClick: (event) => event.stopPropagation(),
+        },
+          h('button', {
+            type: 'button',
+            className: 'ra-set-sel-btn',
+            'aria-haspopup': 'listbox',
+            'aria-expanded': modelOpen,
+            title: resolved.empty ? '选择模型' : (resolved.provider ? `${resolved.provider} · ${resolved.name}` : resolved.name),
+            onClick: () => setModelOpen((was) => !was),
+          },
+            h('span', { className: 'ra-set-sel-val' },
+              h('span', { className: 'ra-set-sel-name', 'data-empty': resolved.empty ? 'true' : undefined }, resolved.name),
+              showProv ? h('span', { className: 'ra-set-sel-prov' }, resolved.provider) : null),
+            h('span', { className: 'ra-set-sel-caret' }, h(CaretIcon))),
+          modelOpen
+            ? h('div', { className: 'ra-set-sel-menu', role: 'listbox' },
+                providers.length === 0
+                  ? h('div', { className: 'ra-set-sel-empty' }, '暂无可用模型')
+                  : providers.flatMap((provider) => [
+                      h('div', { key: `g:${provider.id}`, className: 'ra-set-sel-grp' }, provider.name),
+                      ...provider.models.map((candidate) => {
+                        const value = `${provider.id}::${candidate.id}`;
+                        const active = value === model;
+                        return h('button', {
+                          key: value,
+                          type: 'button',
+                          role: 'option',
+                          'aria-selected': active,
+                          className: 'ra-set-sel-opt',
+                          'data-on': active ? 'true' : 'false',
+                          onClick: () => {
+                            setModel(value);
+                            setModelOpen(false);
+                            setError('');
+                            setSaved(false);
+                          },
+                        },
+                          h('span', { className: 'ra-set-sel-opt-text' }, candidate.name),
+                          h('span', { style: CHECK_SLOT }, active ? h(CheckIcon) : null));
+                      }),
+                    ]))
+            : null);
+
+        const promptText = draft?.prompt ?? '';
+        const promptLen = promptText.length;
+        const promptCustomized = defaultPrompt !== '' && promptText !== defaultPrompt;
+
+        const rawTemp = Number(draft?.temperature);
+        const sliderTemp = Number.isFinite(rawTemp) ? Math.min(2, Math.max(0, rawTemp)) : 0.3;
+        const sliderPct = (sliderTemp / 2) * 100;
+
+        const rawCap = String(draft?.dailyTokenCap ?? '').trim();
+        const capNum = Number(rawCap);
+        const capUnlimited = rawCap !== '' && Number.isFinite(capNum) && capNum === 0;
+        const spentText = tokensToday > 0 ? `今日 ${formatTokens(tokensToday)}` : '';
+        const capBadge = spentText && capUnlimited
+          ? `${spentText} · 不限`
+          : spentText || (capUnlimited ? '不限' : '');
+
+        body = h('div', { className: 'ra-set-body' },
+          h('div', { className: 'ra-set-card' },
+            cardRow('model', '模型', modelPicker),
+            cardRow('length', '详略', segment(LENGTH_MENU, length, setLength)),
+            cardRow('language', '语言', segment(LANG_MENU, language, setLanguage))),
+          h('section', { className: 'ra-set-section' },
+            h('div', { className: 'ra-set-sec-bar' },
+              h('span', { className: 'ra-set-head' }, '提示词'),
+              h('span', { className: 'ra-set-sec-meta' },
+                promptCustomized
+                  ? h('button', {
+                      type: 'button',
+                      className: 'ra-set-reset',
+                      onClick: () => {
+                        setDraft((current) => ({ ...current, prompt: defaultPrompt }));
+                        setError('');
+                        setSaved(false);
+                      },
+                    }, '恢复默认')
+                  : null,
+                h('span', {
+                  className: 'ra-set-count',
+                  'data-over': promptLen > MAX_PROMPT_CHARS ? 'true' : undefined,
+                }, `${promptLen} / ${MAX_PROMPT_CHARS}`))),
             h('textarea', {
               className: 'ra-set-area',
               spellCheck: false,
               maxLength: MAX_PROMPT_CHARS,
-              value: draft?.prompt ?? '',
+              value: promptText,
               onChange: edit('prompt'),
             })),
-          h('section', { key: 'budget', className: 'ra-set-group' },
-            h('div', { className: 'ra-set-head' }, '字数与温度'),
-            h('p', { className: 'ra-set-hint' }, '速览太短会被丢掉，太长会按上限截断；丢掉的那条改为手动点开。'),
-            numberField('minChars', '最短字数', '短于这个就丢掉'),
-            numberField('maxChars', '最长字数', '长于这个就截断'),
-            numberField('temperature', '温度', '0 最贴原文，2 最自由')),
-          h('section', { key: 'tier', className: 'ra-set-group' },
-            h('div', { className: 'ra-set-head' }, '普通档的篇幅'),
-            h('p', { className: 'ra-set-hint' }, '只影响普通档：按原文比例估字数，再用上限兜底。详细档不看这两项，固定按一半比例、最多 1600 字。'),
-            numberField('ratio', '比例', '0 到 1 之间，如 0.3'),
-            numberField('capChars', '上限', `不小于 ${MIN_BUDGET} 的整数`)),
-          h('section', { key: 'cap', className: 'ra-set-group' },
-            h('div', { className: 'ra-set-head' }, '每天最多用'),
-            h('p', { className: 'ra-set-hint' }, '自动速览当天的 token 用量上限，0 表示不限。只拦自动的；手动点开的不拦，但同样计入当天用量。'),
-            numberField('dailyTokenCap', '每日上限', 'tokens，0 表示不限')),
-        ];
+          h('section', { className: 'ra-set-section' },
+            h('div', { className: 'ra-set-sec-bar' },
+              h('span', { className: 'ra-set-head' }, '参数')),
+            h('div', { className: 'ra-set-card' },
+              cardRow('range', '触发字数', [
+                h('span', { key: 'min', className: 'ra-set-pair' },
+                  h('span', { className: 'ra-set-inline-lbl' }, 'min'),
+                  numBox('minChars', 'sm', { label: '最短字数' })),
+                h('span', { key: 'max', className: 'ra-set-pair' },
+                  h('span', { className: 'ra-set-inline-lbl' }, 'max'),
+                  numBox('maxChars', 'md', { label: '最长字数' })),
+              ], { tip: '原文字数在此范围内才会显示速览，短于 min 或长于 max 的回答会跳过。' }),
+              cardRow('tier', '普通档篇幅', [
+                h('span', { key: 'r', className: 'ra-set-pair' },
+                  h('span', { className: 'ra-set-inline-lbl' }, 'ratio'),
+                  numBox('ratio', 'xs', { label: '普通档比例', mode: 'decimal' })),
+                h('span', { key: 'c', className: 'ra-set-pair' },
+                  h('span', { className: 'ra-set-inline-lbl' }, 'cap'),
+                  numBox('capChars', 'sm', { label: '普通档上限', unit: '字' })),
+              ], {
+                dim: length === 'detailed',
+                tip: '仅影响普通档：按原文比例估算目标字数，以 cap 封顶（下限 150 字）。详细档固定 0.5 / 1600 字。',
+              }),
+              cardRow('temperature', 'Temperature', [
+                h('input', {
+                  key: 'slider',
+                  className: 'ra-set-slider',
+                  type: 'range',
+                  min: 0,
+                  max: 2,
+                  step: 0.1,
+                  'aria-label': 'Temperature',
+                  value: sliderTemp,
+                  style: {
+                    background: `linear-gradient(to right, var(--dsw-alias-label-primary,#e5e5e5) 0%, var(--dsw-alias-label-primary,#e5e5e5) ${sliderPct}%, var(--dsw-alias-border-l2,rgba(128,128,128,.28)) ${sliderPct}%, var(--dsw-alias-border-l2,rgba(128,128,128,.28)) 100%)`,
+                  },
+                  onChange: (event) => {
+                    const next = String(Math.round(Number(event.target.value) * 10) / 10);
+                    setDraft((current) => ({ ...current, temperature: next }));
+                    setError('');
+                    setSaved(false);
+                  },
+                }),
+                numBox('temperature', 'xs', { label: '温度', mode: 'decimal' }),
+              ], { tip: '采样温度（0–2）：越低越贴近原文，越高越自由。' }),
+              cardRow('cap', '自动日限额', [
+                capBadge === '' ? null : h('span', { key: 'badge', className: 'ra-set-badge' }, capBadge),
+                numBox('dailyTokenCap', 'lg', { label: '每日上限', unit: 'tokens' }),
+              ], { tip: '自动模式每日 token 上限，0 为不限。手动点击不受限，但同样计入当日用量。' }))));
       }
 
-      // One dialog: rows in one scrolling column, the save button in the footer and
-      // the note beside it, so a save leaves its answer in view. Esc, the close
-      // button and the mask all close through the same handler, and the rows are
-      // re-read the next time it is raised.
+      const saveLabel = saving ? '保存中…' : (!dirty && saved ? '已保存' : '保存');
+
+      // One dialog: grouped cards in a scrolling body, error pinned in the footer
+      // so validation messages never scroll out of sight. Esc, × and backdrop close
+      // through the same handler.
       return h(Modal, {
         open,
         title: '速览设置',
@@ -1786,19 +2046,20 @@ window.__ModuleLoader__.load({
         onClose: closeSettingsDialog,
         className: 'ra-set-dialog',
         contentClassName: 'ra-set-content',
-        footer: h('div', { className: 'ra-set-actions' },
-          note === '' ? null : h('span', { className: 'ra-set-note' }, note),
-          h(Button, {
-            variant: 'primary',
-            disabled: saving || state.kind !== 'ready',
-            onClick: save,
-          }, saving ? '保存中…' : '保存')),
+        footer: h('div', { className: 'ra-set-foot' },
+          error === '' ? null : h('p', { className: 'ra-set-error', role: 'alert' }, error),
+          h('div', { className: 'ra-set-actions' },
+            h(Button, {
+              variant: 'primary',
+              disabled: saving || state.kind !== 'ready' || !dirty,
+              onClick: save,
+            }, saveLabel))),
       }, body);
     }
 
     // The test suite reaches the pure helpers through this hook; the app never sets it.
     if (typeof window.__DSH_INTERPRETER_TEST__ === 'function') {
-      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText, draftOf, readDraft });
+      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText, draftOf, readDraft, resolveModelLabel });
     }
 
     return {

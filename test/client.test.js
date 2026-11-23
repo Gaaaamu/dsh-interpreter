@@ -23,7 +23,7 @@ globalThis.window = {
   __DSH_INTERPRETER_TEST__: (exposed) => { helpers = exposed },
 }
 new Function(source)()
-const { blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText, draftOf, readDraft } = helpers
+const { blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText, draftOf, readDraft, resolveModelLabel } = helpers
 
 /** The href of every link in an inline run, or the text where a node is text. */
 const hrefs = (text) => inline(text, 'k').map((node) => (typeof node === 'string' ? node : node.props.href ?? node.type))
@@ -243,4 +243,13 @@ test('the draft is the rows as text, and a missing row stays empty', () => {
     dailyTokenCap: '',
     prompt: 'x',
   })
+})
+
+test('model labels resolve display names and fall back cleanly when missing', () => {
+  const providers = [
+    { id: 'ds', name: 'DeepSeek', models: [{ id: 'chat', name: 'DeepSeek Chat' }] },
+  ]
+  assert.deepEqual(resolveModelLabel('', providers), { empty: true, name: '选择模型', provider: '' })
+  assert.deepEqual(resolveModelLabel('ds::chat', providers), { empty: false, name: 'DeepSeek Chat', provider: 'DeepSeek' })
+  assert.deepEqual(resolveModelLabel('other::v1', providers), { empty: false, name: 'v1', provider: 'other' })
 })

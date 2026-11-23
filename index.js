@@ -761,6 +761,8 @@ export function apply(ctx, config) {
           /** What the guard has to work with: spent today, and the ceiling. */
           tokensToday: Math.round(spentToday()),
           tokenCap: dailyCap(options),
+          /** Built-in prompt so the settings dialog can offer one-click restore. */
+          defaultPrompt: DEFAULT_PROMPT,
           /** The rows the settings page edits. */
           settings: formOf(options),
         })
