@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          # Omit registry-url so setup-node does not write an empty NODE_AUTH_TOKEN into .npmrc,
+          # which would override npm Trusted Publishing (OIDC).
+
+      - name: Verify Node/npm version and tag alignment
+        run: |
+          node -v
+          npm -v
+          TAG_VER="${GITHUB_REF_NAME#v}"
+          PKG_VER="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")"
+          echo "Tag version: $TAG_VER"
+          echo "package.json version: $PKG_VER"
+          if [ "$TAG_VER" != "$PKG_VER" ]; then
+            echo "::error::Tag version ($TAG_VER) does not match package.json version ($PKG_VER)"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: npm test
+
+      - name: Verify package contents
+        run: npm pack --dry-run
+
+      - name: Publish to npm via Trusted Publishing (OIDC)
+        run: npm publish
+
+      - name: Record published package metadata
+        run: |
+          TAG_VER="${GITHUB_REF_NAME#v}"
+          for i in 1 2 3 4 5; do
+            INFO="$(npm view "dsh-interpreter@${TAG_VER}" version dist.integrity gitHead --json 2>/dev/null || true)"
+            if [ -n "$INFO" ]; then
+              {
+                echo "### Published \`dsh-interpreter@${TAG_VER}\`"
+                echo '```json'
+                echo "$INFO"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Published dsh-interpreter@${TAG_VER}; run \`npm view dsh-interpreter@${TAG_VER} version dist.integrity gitHead\` locally to read metadata." >> "$GITHUB_STEP_SUMMARY"
+
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "GitHub Release ${GITHUB_REF_NAME} already exists."
+          else
+            gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --generate-notes
+          fi
