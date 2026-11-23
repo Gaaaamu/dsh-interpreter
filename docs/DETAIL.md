@@ -16,7 +16,7 @@ Project page: [dsh-interpreter](https://github.com/Gaaaamu/dsh-interpreter)
 
 ## The settings dialog
 
-The menu's last row, 「设置」, opens 「速览设置」 as a small panel over the conversation, drawn with the app's own Modal (not a panel switch of the plugin's own, and not DSH's Settings): the page behind dims and stays exactly where it was. The dialog carries every row the bundle owns: model, 「详略」, 「语言」, the prompt (with one-click restore default when customized), trigger length bounds (`min` / `max`), the 普通-tier `ratio` and `cap`, `Temperature`, and the daily token ceiling. 「保存」 stays disabled until something changes, writes the whole page in one request, and turns into a disabled 「已保存」 state while keeping the dialog open; Esc, the × in the title bar, or a click on the dimmed page closes it.
+The menu's last row, 「设置」, opens 「速览设置」 as a small panel over the conversation, drawn with the app's own Modal (not a panel switch of the plugin's own, and not DSH's Settings): the page behind dims and stays exactly where it was. The dialog carries every tuning row the bundle owns except the automation scope: model, 「详略」, 「语言」, the prompt (with one-click restore default when customized), trigger length bounds (`min` / `max`), the 普通-tier `ratio` and `cap`, `Temperature`, and the daily token ceiling. 「保存」 stays disabled until something changes, writes the whole page in one request, and turns into a disabled 「已保存」 state while keeping the dialog open; Esc, the × in the title bar, or a click on the dimmed page closes it.
 
 - Every editable field is a live field, so a save takes effect in place: no plugin restart, and no interruption to a rewrite in flight. A prompt or number change makes the next click generate afresh, while a tier, language or model switch keeps its own cache.
 - 「自动速览」 and its session allow-list are deliberately not on this page: scope is per session and stays in the block's own menu, so a stale copy of the allow-list can never overwrite another block's change.
@@ -26,14 +26,14 @@ The menu's last row, 「设置」, opens 「速览设置」 as a small panel ove
 ## When it appears
 
 - A reply must have prose and be at least `minChars` (default 400) and at most `maxChars` (default 40000) characters long.
-- Tool-only turns, turns without prose, and interrupted turns get no entry point; the Host decides with one local request that calls no model.
+- Tool-only turns and turns without prose get no entry point. An interrupted answer skips automatic rewriting only: clicking it by hand still generates. The Host decides with one local request that calls no model.
 
 ## Cost and boundaries
 
-- Each generation is one model call. If the result exceeds the target length by 1.5×, the draft is condensed once more and both calls' tokens are shown.
+- Each generation is one model call. If the result exceeds 1.5× the target length, the draft is condensed once more and both calls' tokens are shown.
 - Results are cached per session, turn, model, length tier, and language: expanding again costs nothing, switching any of them regenerates, and switching back hits the cache.
 - Only the reply already stored for this turn is sent to the model you picked. Nothing is uploaded elsewhere, the original reply is not modified, and the session log gains no events.
-- With `dailyTokenCap` set, automatic rewriting stops once today's own spend reaches the ceiling and leaves one line in the block; clicking 「速览」 by hand is never capped, and tomorrow starts afresh. The count lives in memory only and resets with the plugin: it is a runaway brake, not a bill.
+- With `dailyTokenCap` set, automatic rewriting stops once today's spend (manual generations included) reaches the ceiling and leaves one line in the block; clicking 「速览」 by hand is never capped, and tomorrow starts afresh. The count lives in memory only and resets with the plugin: it is a runaway brake, not a bill.
 
 ## Configuration
 

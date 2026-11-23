@@ -26,7 +26,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 * **长度随手调**：`⋯` 菜单里的「详略」两档快切，选完即按新档重写当前这块，其他块跟着改设置；两档各自缓存，来回切换不重复计费。
 * **语言定下来**：速览默认跟原文同语言，也可用「跟随 / 中文 / 英文」固定一种，术语和命令照抄不译；首次生成与收紧那一轮都照办，三种选择各自缓存。
 * **开关收进一个角落菜单**：区块右上角的 `⋯` 把「自动速览 / 详略 / 语言 / 模型」四行收进一个菜单，选完就关，界面上只留折起来的那一行。
-* **插件自己的设置弹窗**：菜单最后一行「设置」在会话上方弹出「速览设置」小面板，背景压暗、会话位置不动；模型、详略、语言、提示词（支持一键恢复默认）、触发字数（`min` / `max`）、普通档篇幅（`ratio` / `cap`）、`Temperature` 与自动日限额集中在一处改，有改动时点「保存」就地生效并变为置灰的「已保存」，Esc、右上角 × 或点背景关掉，不用去翻 YAML，也不用重启。
+* **插件自己的设置弹窗**：菜单最后一行「设置」在会话上方弹出「速览设置」小面板，背景压暗、会话位置不动；除自动速览范围外的全部可调项（模型、详略、语言、提示词及各项长度/限额参数）集中在一处改，有改动时点「保存」就地生效并变为置灰的「已保存」，Esc、右上角 × 或点背景关掉，不用去翻 YAML，也不用重启。
 
 ### 安装与使用
 
@@ -44,7 +44,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 插件安装后默认处于**手动模式**，不会自动触发调用产生费用：
 1. 点击回答下方的「› 速览」展开区块，点区块右上角的 `⋯`，先在「模型」一行选好当前环境中可用的 `provider / model`。
 2. 同一个菜单里就能调篇幅和语言：需要控制长度时切「普通 / 详细」，想固定语言就切「跟随 / 中文 / 英文」。两者都是本机偏好，存进同一个 `config`。
-3. 菜单最后一行「设置」打开插件自己的「速览设置」弹窗：模型、详略、语言、提示词（支持恢复默认）以及触发字数（`min` / `max`）、普通档篇幅（`ratio` / `cap`）、`Temperature`、自动日限额都在这里；有改动时点「保存」就地生效（都是 live 字段，插件不重启）并变为置灰的「已保存」，Esc、右上角 × 或点压暗的背景关掉弹窗。
+3. 菜单最后一行「设置」打开「速览设置」弹窗，可直接调整提示词（支持一键恢复默认）与各项参数，有改动时点「保存」就地生效（均为 live 字段，插件不重启），Esc、右上角 × 或点遮罩关掉弹窗。
 4. 根据使用习惯切换运行模式（选择存进**当前 Profile 目录下**的 `cordis.patch.yml`，即其中 `- id: interpreter` 那一行的 `config`，由界面经 DSH 的配置接口写回。模型、模式、长度档位、语言、提示词与字数参数都是 DSH 的 live 字段，保存后就地生效，插件不重启，正在生成的速览不受影响）：
 
 | 模式 | 行为说明 |
@@ -59,7 +59,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 
 在**当前 Profile 目录下**的 `cordis.patch.yml` 里，通过 `- id: interpreter` 那一行的 `config` 字段调整参数（优先级：内置默认 < 该行 `config`；界面上的选择也写回这一行）。
 
-日常调参不用改文件：块右上角 `⋯` → 「设置」里的「速览设置」弹窗覆盖了下表全部参数，保存就地生效。下面的表格是这些参数的默认值与含义，也是手改 YAML 时的参照。
+日常调参不用改文件：块右上角 `⋯` → 「设置」里的「速览设置」弹窗覆盖了除自动速览范围（`mode` / `sessions`）外的全部调参项，保存就地生效。下表列出这些调参项的默认值与含义，完整字段见 [实现文档](docs/IMPLEMENTATION.md)。
 
 > 注意：插件包里也有一个同名的 `cordis.patch.yml`，那只是安装时的初始值。界面第一次保存后，Profile 里的这一行会带上完整的 `config`（包括当时的 `minChars` 等），从此整份替代插件包里的初始值；之后要调参，请改 Profile 目录下的那份。
 
@@ -74,7 +74,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 | `language` | `auto` | 速览语言：`auto`（跟随原文）/ `zh`（固定中文）/ `en`（固定英文）。固定后即使原文是另一种语言也照办 |
 | `temperature` | `0.3` | 摘要生成的采样温度 |
 | `prompt` | 内置 | 摘要改写指令，可通过自定义指令调整输出风格 |
-| `dailyTokenCap` | `0` | 自动模式每天最多花掉的 tokens（按本机自然日算，插件重启后清零），`0` 表示不限。到额度后只是不再自动整理，手动点「速览」不受限制 |
+| `dailyTokenCap` | `0` | 自动模式每天最多花掉的 tokens（按本机自然日算，插件重启后清零；手动生成也计入当日用量），`0` 表示不限。到额度后只是不再自动整理，手动点「速览」不受限制 |
 
 ### 模型选择建议
 
@@ -83,7 +83,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 ### 费用与隐私说明
 
 * **计费与缓存**：每次生成对应一次模型调用；若首次生成结果超出字数预算的 1.5 倍，插件会基于草稿自动执行二次压缩（界面显示的 Token 数为两次调用之和）。生成结果按「模型 + 会话 + 轮次序号 + 长度档位 + 语言」缓存，重复展开不重复计费；换了模型、档位或语言会重新生成，切回原来的组合时，之前的结果仍然有效。
-* **自动模式费用护栏**：给 `dailyTokenCap` 设一个大于 0 的值后，插件会记下当天自己花掉的 Token 数，自动整理花到额度就停下，在这一轮留下一行提示，点开可看用量并手动生成；手动点击不受额度限制，第二天自动恢复。计数只在内存里，重启 DSH 或插件后从零开始，所以它是防跑飞的刹车，不是精确账单。
+* **自动模式费用护栏**：给 `dailyTokenCap` 设一个大于 0 的值后，插件会记下当天自己花掉的 Token 数（手动生成也算），累计花到额度后自动整理停下，在这一轮留下一行提示，点开可看用量并手动生成；手动点击不受额度限制，第二天自动恢复。计数只在内存里，重启 DSH 或插件后从零开始，所以它是防跑飞的刹车，不是精确账单。
 * **数据边界**：除将当前轮次已生成的回答发送至用户所选的摘要模型接口外，不向任何第三方上传数据。
 
 ### 开发
@@ -141,7 +141,7 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 * **Length On Tap**: 「详略」 in the `⋯` menu switches tier in one click; the current block is rewritten at the new size and other blocks follow the setting. Each tier keeps its own cache, so switching back and forth costs nothing.
 * **Language, Pinned**: the 速览 follows the answer's own language by default, or 「跟随 / 中文 / 英文」 pins one; terms and commands are copied verbatim, never translated. Both the first draft and the tightening pass obey it, and each choice keeps its own cache.
 * **Switches in One Corner**: `⋯` at the block's top-right folds 自动速览 / 详略 / 语言 / 模型 into one menu that closes on a pick, leaving the folded row to carry the line on its own.
-* **A Settings Dialog of Its Own**: the menu's last row, 「设置」, opens 「速览设置」 as a small panel over the conversation — the page behind dims and stays exactly where it was: model, tier, language, prompt (with one-click restore default), trigger length bounds (`min` / `max`), 普通-tier `ratio` / `cap`, `Temperature`, and the daily token ceiling in one place. 「保存」 stays disabled until edited, lands in place without restarting, and turns into disabled 「已保存」 — no YAML to edit, and Esc, the × or a click on the backdrop closes it.
+* **A Settings Dialog of Its Own**: the menu's last row, 「设置」, opens 「速览设置」 as a small panel over the conversation — the page behind dims and stays exactly where it was: every tuning option except the automation scope (model, tier, language, prompt, and all length/budget parameters) lives in one place. 「保存」 stays disabled until edited, lands in place without restarting, and turns into disabled 「已保存」 — no YAML to edit, and Esc, the × or a click on the backdrop closes it.
 
 ### Installation & Usage
 
@@ -159,7 +159,7 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 The plugin defaults to **Manual** mode so no calls are made automatically upon installation:
 1. Click "› 速览" below a response, then `⋯` at its top-right, and pick an available `provider / model` from the 「模型」 row.
 2. The same menu carries size and language: 「普通 / 详细」 for the tier and 「跟随 / 中文 / 英文」 to pin the language; both are local preferences and land in the same `config`.
-3. The menu's last row, 「设置」, opens the plugin's own 「速览设置」 dialog for model, tier, language, prompt (with one-click restore default), trigger length bounds (`min` / `max`), 普通-tier `ratio` / `cap`, `Temperature`, and the daily token ceiling. 「保存」 stays disabled until edited, writes changes in place (all live fields, no plugin restart), and turns into disabled 「已保存」; Esc, the × or a click on the dimmed backdrop closes the dialog.
+3. The menu's last row, 「设置」, opens the 「速览设置」 dialog to edit the prompt (with one-click restore default) and tuning parameters. 「保存」 stays disabled until edited, writes changes in place (all live fields, no plugin restart), and turns into disabled 「已保存」; Esc, the × or a click on the dimmed backdrop closes the dialog.
 4. Switch modes as needed (the choice lives in **the profile directory's** `cordis.patch.yml`, in the `config` of its `- id: interpreter` row, written back by the UI through DSH's config API. Model, mode, length tier, language, prompt and length bounds are DSH live fields: a save takes effect in place without restarting the plugin, so rewrites in progress are not interrupted):
 
 | Mode | Behavior |
@@ -174,7 +174,7 @@ Automatic modes only cover answers written **after** they were switched on: open
 
 Parameters can be tuned in **the profile directory's** `cordis.patch.yml`, under `config` of its `- id: interpreter` row (precedence: built-in defaults < that row's `config`; UI choices are written back to the same row).
 
-For day-to-day tuning there is no file to edit: the 「速览设置」 dialog behind `⋯` → 「设置」 covers every parameter in the table below, and a save lands in place. The table documents their defaults and meanings, and doubles as a reference when editing the YAML by hand.
+For day-to-day tuning there is no file to edit: the 「速览设置」 dialog behind `⋯` → 「设置」 covers every tuning parameter below (automation scope `mode` / `sessions` stays in the block's `⋯` menu), and a save lands in place. The table documents their defaults and meanings; see [IMPLEMENTATION.md](docs/IMPLEMENTATION.md) for the complete config schema.
 
 > Note: the plugin package ships its own `cordis.patch.yml`; that file only seeds the first install. After the first save from the UI, the profile row carries the complete `config` (including the `minChars` and other values in force at the time) and replaces the package's values entirely, so tune the profile directory's copy from then on.
 
@@ -189,7 +189,7 @@ For day-to-day tuning there is no file to edit: the 「速览设置」 dialog be
 | `language` | `auto` | Language of the 速览: `auto` (follow the original) / `zh` (always Chinese) / `en` (always English); a fixed language wins even when the original is in another one |
 | `temperature` | `0.3` | Sampling temperature for the rewrite call |
 | `prompt` | Built-in | Custom rewrite instruction to adjust the output style |
-| `dailyTokenCap` | `0` | Tokens automatic mode may spend per local day (`0` = no ceiling; the count resets when the plugin restarts). Over it, automation stops but manual clicks still generate |
+| `dailyTokenCap` | `0` | Tokens automatic mode may spend per local day (`0` = no ceiling; the count resets when the plugin restarts and includes manual generations). Over it, automation stops but manual clicks still generate |
 
 ### Model Selection
 
@@ -198,7 +198,7 @@ Effective summarization relies on **explanatory clarity and information restruct
 ### Cost & Privacy
 
 * **Billing & Caching**: Each rewrite is a standalone model call. If the initial draft exceeds 1.5× the target length budget, a second compression pass is executed automatically (the displayed token usage reflects the sum of both calls). Results are cached by model, session, sequence number, length tier and language; reopening a block is free, a new model, tier or language rewrites afresh, and switching back to a previous combination reuses its results.
-* **Automatic-Mode Guard**: With `dailyTokenCap` above 0, the plugin counts the tokens its own rewrites spend today and stops automatic rewriting at the ceiling, leaving one line in that turn that opens into the usage and a manual generate action. Manual clicks are never capped, and tomorrow starts afresh. The count lives in memory and restarts from zero with the plugin, so it is a runaway brake, not a bill.
+* **Automatic-Mode Guard**: With `dailyTokenCap` above 0, the plugin counts the tokens its own rewrites spend today (manual generations included) and stops automatic rewriting at the ceiling, leaving one line in that turn that opens into the usage and a manual generate action. Manual clicks are never capped, and tomorrow starts afresh. The count lives in memory and restarts from zero with the plugin, so it is a runaway brake, not a bill.
 * **Data Boundary**: No data is uploaded anywhere except sending the finalized turn response to your configured rewrite provider.
 
 ### Development

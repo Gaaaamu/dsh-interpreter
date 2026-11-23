@@ -18,7 +18,7 @@
 - 纯工具轮次、没有正文的轮次，以及短于 `minChars` 或长于 `maxChars` 的回答，连「› 速览」这一行都不出现：点了也只会回一句「这条没什么可压的」，不如别放。判定由 Host 侧做（`POST /interpreter/probe`），一次本地请求、不调模型、不进缓存。
 - 还要看此刻的模式：`全部` 每条都做，`本会话` 只做加入白名单的会话，`手动` 一条都不做，等你去点。模式按「当前会话」显示：本会话模式下，不在白名单里的会话显示为 `手动`；在白名单里的会话切回 `手动`，只把它自己移出白名单。
 - 自动模式只管打开之后（以及本次启动 DSH 之后）新写出来的回答，且跳过被用户中途打断（`interrupted`）的回答。翻开旧会话时，以前的回答一律是收起的一行「› 速览」，点了才生成，不会补跑整段历史。同一时间最多 2 个改写在跑，其余排队。
-- 若配置了 `dailyTokenCap`（大于 0），当天自动整理累计用量达到上限后会停下，该轮收起为一行 `› 速览 · 今日额度已用完`，点开可看当日用量并通过「现在整理这一条」手动触发；手动点击不受额度限制，次日按本机自然日自动重置。
+- 若配置了 `dailyTokenCap`（大于 0），当天插件自身累计用量（含手动生成）达到上限后会停下，该轮收起为一行 `› 速览 · 今日额度已用完`，点开可看当日用量并通过「现在整理这一条」手动触发；手动点击不受额度限制，次日按本机自然日自动重置。
 - 链接只认网页（`http` / `https`）、`file:`、`mailto:` 和本地路径；`javascript:`、`data:` 这类地址只留文字、不做成链接。
 - 默认是 `手动`：装上之后，够长的回答下面只有一行「› 速览」，点一下才生成，不会自己花钱。用顺手了在右上角 `⋯` 菜单里切到「本会话」或「全部」。
 
@@ -101,7 +101,7 @@
 - `POST /interpreter/probe`：读取同一份轮次日志判断是否满足正文存在与 `minChars`–`maxChars` 区间，返回 `ok` 或 `too-short` / `too-long` / `no-answer`；不调模型、不进缓存、不看 `autoSince`。
 - `GET /interpreter/models`：枚举 `ctx.llm.listProviders()` × `listModels()` 及当前选中的 `provider` / `model`。
 - `GET /interpreter/config`：返回 `mode`、`sessions`、`length`、`language`、`live`、`tokensToday`、`tokenCap`、`defaultPrompt` 及 `settings`（经 `formOf` 补齐默认值的表单字段）。
-- `POST /interpreter/config`：校验并持久化局部更新；白名单通过 `addSessions` / `removeSessions` 增量合并避免并发覆盖。全部 14 个配置字段均通过动态导入 `@deepseek-ai/schemastery`（声明于可选 `peerDependencies`）标记为 `.volatile()`，保存时就地更新、不重启插件；加载不到 schema 时自动退回重启模式并通过 `live: false` 上报。改动 `REWRITE_FIELDS`（`temperature`、`ratio`、`capChars`、`minChars`、`maxChars`、`prompt`）时递增 `revision`，使旧缓存与在途任务自然失效。
+- `POST /interpreter/config`：校验并持久化局部更新；白名单通过 `addSessions` / `removeSessions` 增量合并避免并发覆盖。全部 14 个配置字段（含内部 `autoSince`）均通过动态导入 `@deepseek-ai/schemastery`（声明于可选 `peerDependencies`）标记为 `.volatile()`，保存时就地更新、不重启插件；加载不到 schema 时自动退回重启模式并通过 `live: false` 上报。改动 `REWRITE_FIELDS`（`temperature`、`ratio`、`capChars`、`minChars`、`maxChars`、`prompt`）时递增 `revision`，使旧缓存与在途任务自然失效。
 
 ### Client 侧（`client.js`）
 
