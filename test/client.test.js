@@ -23,7 +23,7 @@ globalThis.window = {
   __DSH_INTERPRETER_TEST__: (exposed) => { helpers = exposed },
 }
 new Function(source)()
-const { blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText, draftOf, readDraft, resolveModelLabel, traceLine, traceText } = helpers
+const { blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText, draftOf, readDraft, resolveModelLabel, traceLine, traceText, waitedWords } = helpers
 
 /** The href of every link in an inline run, or the text where a node is text. */
 const hrefs = (text) => inline(text, 'k').map((node) => (typeof node === 'string' ? node : node.props.href ?? node.type))
@@ -309,4 +309,13 @@ test('a rewrite says how it was made, in a line and in full', () => {
   // An older Host sends no record: nothing to say, nothing to copy.
   assert.equal(traceLine(undefined), '')
   assert.equal(traceText(undefined), '')
+})
+
+test('a long wait says how long it has been', () => {
+  const since = 1_000_000
+  assert.equal(waitedWords(since, since + 9_999), '')
+  assert.equal(waitedWords(since, since + 45_000), '已等 45 秒')
+  assert.equal(waitedWords(since, since + 125_400), '已等 2 分 5 秒')
+  // The first render's phase carries no start time: nothing to say.
+  assert.equal(waitedWords(undefined, since), '')
 })

@@ -776,7 +776,7 @@ test('角色版 is told the layout code read from the answer', async () => {
 test('a 角色版 draft laid out wrong goes back once with what to fix', async () => {
   const cases = [
     // Sectioned answer, flat draft: told the sections to block by.
-    [SECTIONED, '结论。\n\n- 一\n- 二', /要再改一遍：没有分块：按「一、强缓存」、「二、协商缓存」、「三、怎么配」的顺序合并成 2–4 块，每块加 #### 小标题。内容不要增减。/],
+    [SECTIONED, '结论。\n\n- 一\n- 二', /要再改一遍：没有分块：按「一、强缓存」、「二、协商缓存」、「三、怎么配」的顺序合并成 2–4 块，每块加 #### 小标题。除此之外内容不要增减。/],
     // A heading before the opening sentence.
     [SECTIONED, '#### 两层缓存\n- 强缓存\n\n#### 怎么配\n- 长缓存', /开头先写一句结论，小标题放在它后面。/],
     // A category word as a heading.
@@ -804,14 +804,14 @@ test('a 角色版 draft laid out wrong goes back once with what to fix', async (
 test('a 角色版 line that packs several points goes back to be split', async () => {
   const cases = [
     // Points strung together with semicolons in one item.
-    [`${BLOCKED}\n- 强缓存直接用本地副本；协商缓存问一次；都没有就回源`, /有 1 处把几件事塞进了一段或一条：「强缓存直接用本地副本；协商缓存问…」（3 件）。拆成要点，一条只说一件事、不超过 100 字，不用分号串；拆出来的要点留在原来那块里，不要为它们新加小标题。/],
+    [`${BLOCKED}\n- 强缓存直接用本地副本；协商缓存问一次；都没有就回源`, /有 1 处把几件事塞进了一段或一条：「强缓存直接用本地副本；协商缓存问…」（3 件）。拆成要点，一条只说一件事，不用分号串；拆出来的要点留在原来那块里，不要为它们新加小标题。/],
     // A paragraph of four sentences.
     [`${BLOCKED}\n\n一句。二句。三句。四句。`, /「一句。二句。三句。四句。」（4 件）/],
     // An item of three sentences, with no semicolon at all.
     [`${BLOCKED}\n- 一句。二句。三句。`, /「一句。二句。三句。」（3 件）/],
     // A paragraph of two long sentences is a wall by its length alone, and so is a long item.
     [`${BLOCKED}\n\n${'长'.repeat(70)}。${'句'.repeat(60)}。`, /「长{16}…」（132 字）/],
-    [`${BLOCKED}\n- ${'项'.repeat(110)}`, /「项{16}…」（110 字）/],
+    [`${BLOCKED}\n- ${'项'.repeat(130)}`, /「项{16}…」（130 字）/],
     // Many packed lines go back as one instruction that quotes a few of them.
     [`${BLOCKED}${'\n- 甲。乙。丙。'.repeat(5)}`, /有 5 处把几件事塞进了一段或一条：(「甲。乙。丙。」（3 件）){3}等。/],
   ]
@@ -848,6 +848,7 @@ test('a 角色版 line that packs several points goes back to be split', async (
     '| 资源 | `a; b; c` |',
     '```\na; b; c\n```',
     '- 强缓存不问服务器；过期才问。',
+    '#### 怎么验',
     '前者管存多久；后者管过期后怎么验。两者分开配。',
     '过期后，条件请求会同时带上两个验证器：',
     '- `If-None-Match`',
@@ -857,6 +858,42 @@ test('a 角色版 line that packs several points goes back to be split', async (
   h.setLog([{ ...answer(), text: SECTIONED }])
   const result = await h.rewrite({ sessionId: 's', seq: 1 }).done
   assert.equal(result.text, fine)
+  assert.equal(h.state.calls, 1)
+  await h.cleanup()
+})
+
+test('a 角色版 block split into fragments goes back to be merged', async () => {
+  const fragments = (count) => Array.from({ length: count }, (_, at) => `- 设第 ${at + 1} 项。`).join('\n')
+  const cases = [
+    // Eleven one-clause items under one heading.
+    [SECTIONED, `结论。\n\n#### 常见坑\n${fragments(11)}\n\n#### 怎么配\n- 二`, /「常见坑」这块有 11 条，太碎：说同一件事的并成一条，次要的删掉，留到 5 条以内。除此之外内容不要增减。/],
+    // A flat 速览 with eight points after its opening sentence.
+    [LONG, `结论。\n\n${fragments(8)}`, /要点有 8 条，太碎：说同一件事的并成一条，次要的删掉，留到 6 条以内。/],
+  ]
+  for (const [text, draft, told] of cases) {
+    const prompts = []
+    const fixed = text === LONG ? '结论。\n\n- 一\n- 二' : BLOCKED
+    const h = await rolesHost([draft, fixed], prompts)
+    h.setLog([{ ...answer(), text }])
+    const result = await h.rewrite({ sessionId: 's', seq: 1 }).done
+    assert.match(prompts[1], told, draft)
+    assert.equal(result.text, fixed)
+    await h.cleanup()
+  }
+
+  // Five lines a block, a table and a code block counted as one each, and the opening sentence not at all.
+  const prompts = []
+  const full = [
+    '结论一句，不算在块里。',
+    '#### 怎么配',
+    '说明一句。', '| 资源 | 头 |', '|---|---|', '| a | b |', '| c | d |', '', '```sh\ncurl -I /\necho 1\n```', '- 一', '- 二',
+    '#### 常见坑',
+    '- 一', '- 二', '- 三', '- 四', '- 五',
+  ].join('\n')
+  const h = await rolesHost([full], prompts)
+  h.setLog([{ ...answer(), text: SECTIONED }])
+  const result = await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.equal(result.text, full)
   assert.equal(h.state.calls, 1)
   await h.cleanup()
 })
@@ -927,8 +964,8 @@ test('a 角色版 repair is kept only when its layout is no worse', async () => 
 
   // A tightening pass that drops the headings loses to the longer draft that kept them.
   prompts = []
-  // Many short items, none of them a wall: over budget, nothing else wrong.
-  const long = `结论。\n\n#### 两层缓存${`\n- ${'y'.repeat(90)}`.repeat(16)}\n\n#### 怎么配\n- 二`
+  // Four blocks of four short items, none of them a wall nor a heap: over budget, nothing else wrong.
+  const long = `结论。${['两层缓存', '怎么配', '怎么验', '常见坑'].map((title) => `\n\n#### ${title}${`\n- ${'y'.repeat(90)}`.repeat(4)}`).join('')}`
   h = await rolesHost([long, '结论。'], prompts)
   h.setLog([{ ...answer(), text: SECTIONED }])
   result = await h.rewrite({ sessionId: 's', seq: 1 }).done

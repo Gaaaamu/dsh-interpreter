@@ -801,6 +801,25 @@ window.__ModuleLoader__.load({
       return `输入 ${prompt}${cached > 0 ? `（缓存命中 ${cached}）` : ''} · 输出 ${usage.outputTokens}${thinking > 0 ? `（思考 ${thinking}）` : ''} · 合计 ${usage.totalTokens}`;
     }
 
+    /** Seconds of waiting not worth mentioning: most rewrites are back before this. */
+    const QUIET_WAIT_SECONDS = 10;
+
+    /** The wait beside 「整理中」, in the caption's voice. */
+    const WAITED = { marginLeft: 8, color: 'var(--dsw-alias-label-secondary, inherit)' };
+
+    /**
+     * How long a rewrite has been waited on, once it is long enough to say:
+     * 「已等 45 秒」, then 「已等 2 分 5 秒」.
+     * @param since - when the request went out, in milliseconds.
+     * @param now - the time to measure to.
+     */
+    function waitedWords(since, now) {
+      if (typeof since !== 'number') return '';
+      const seconds = Math.floor((now - since) / 1000);
+      if (seconds < QUIET_WAIT_SECONDS) return '';
+      return seconds < 60 ? `已等 ${seconds} 秒` : `已等 ${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
+    }
+
     /** What each call of a rewrite was for, in the reader's words. */
     const CALL_LABEL = { draft: '初稿', tighten: '再压一遍', repair: '按排版问题重写' };
 
@@ -1422,7 +1441,7 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         if (!usable || !started) return undefined;
         let live = true;
-        setPhase({ kind: 'loading' });
+        setPhase({ kind: 'loading', since: Date.now() });
         requestRewrite(sessionId, seq, attempt > 0, !wanted)
           .then((result) => {
             if (!live) return;
@@ -1448,6 +1467,17 @@ window.__ModuleLoader__.load({
           });
         return () => { live = false; };
       }, [usable, started, sessionId, seq, attempt, revision]);
+
+      /**
+       * A rewrite that goes back for a second pass can take minutes; the wait
+       * says how long it has been, so a slow one does not look like a stuck one.
+       */
+      const [now, setNow] = useState(() => Date.now());
+      useEffect(() => {
+        if (phase.kind !== 'loading' || phase.since === undefined) return undefined;
+        const timer = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(timer);
+      }, [phase]);
 
       const parsed = useMemo(() => (phase.kind === 'ready' ? blocks(phase.text) : []), [phase]);
 
@@ -1484,7 +1514,10 @@ window.__ModuleLoader__.load({
             h('span', { className: 'ra-dots', 'aria-hidden': 'true' },
               h('span', null, '.'),
               h('span', { className: 'ra-dot2' }, '.'),
-              h('span', { className: 'ra-dot3' }, '.')))));
+              h('span', { className: 'ra-dot3' }, '.'))),
+          waitedWords(phase.since, now) === ''
+            ? null
+            : h('span', { key: 'waited', style: WAITED }, waitedWords(phase.since, now))));
       } else if (phase.kind === 'toolong') body.push(h('div', { key: 'long', style: MUTED }, '原文太长，这次没有整理'));
       else if (spent) {
         body.push(h('div', { key: 'spend', style: MUTED },
@@ -2224,7 +2257,7 @@ window.__ModuleLoader__.load({
 
     // The test suite reaches the pure helpers through this hook; the app never sets it.
     if (typeof window.__DSH_INTERPRETER_TEST__ === 'function') {
-      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText, draftOf, readDraft, resolveModelLabel, traceLine, traceText });
+      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText, draftOf, readDraft, resolveModelLabel, traceLine, traceText, waitedWords });
     }
 
     return {

@@ -443,7 +443,8 @@ function layoutCheck(draft, outline) {
   const packed = packedLines(draft)
   if (packed.length > 0) {
     const quoted = packed.slice(0, MAX_QUOTED).map((line) => `「${line.quote}」（${line.size}）`).join('')
-    problems.push(`有 ${packed.length} 处把几件事塞进了一段或一条：${quoted}${packed.length > MAX_QUOTED ? '等' : ''}。拆成要点，一条只说一件事、不超过 ${MAX_ITEM_CHARS} 字，不用分号串；拆出来的要点留在原来那块里，不要为它们新加小标题。`)
+    // No number of characters here: told one, the model counts them, at length.
+    problems.push(`有 ${packed.length} 处把几件事塞进了一段或一条：${quoted}${packed.length > MAX_QUOTED ? '等' : ''}。拆成要点，一条只说一件事，不用分号串；拆出来的要点留在原来那块里，不要为它们新加小标题。`)
   }
   return { problems, faults: problems.length + Math.max(0, packed.length - 1) }
 }
@@ -466,8 +467,72 @@ function layoutProblems(draft, outline) {
   if (!outline.blocks && titles.length > 0) problems.push('这条不用分块：去掉小标题，写成一句结论加几条要点。')
   const named = titles.filter((title) => CATEGORY_WORDS.has(title.replace(/\s/g, '')))
   if (named.length > 0) problems.push(`小标题${named.map((title) => `「${title}」`).join('')}是分类名，换成内容本身的词。`)
+  for (const block of crowdedBlocks(draft)) {
+    const which = block.title === null ? '要点' : `「${block.title}」这块`
+    const limit = block.title === null ? MAX_FLAT_LINES : MAX_BLOCK_LINES
+    problems.push(`${which}有 ${block.lines} 条，太碎：说同一件事的并成一条，次要的删掉，留到 ${limit} 条以内。`)
+  }
   for (const lead of leadIns(draft)) problems.push(`「${lead.label}」只是个标签：小标题已经说清时删掉这一行，直接给${lead.before}；没说清就换成一句交代${lead.before}讲什么的话。`)
   return problems
+}
+
+/** Lines one block may hold, items and paragraphs together, a table or a code block as one. */
+const MAX_BLOCK_LINES = 5
+
+/** Lines a 速览 without blocks may hold after its opening sentence. */
+const MAX_FLAT_LINES = 6
+
+/**
+ * Blocks split so fine they read as a heap of fragments: more than
+ * {@link MAX_BLOCK_LINES} lines under one heading, or, in a 速览 without
+ * headings, more than {@link MAX_FLAT_LINES} after the opening paragraph.
+ * The check that splits packed lines needs this one opposite it, or a repair
+ * turns every clause into an item of its own.
+ * @param draft - the model's 速览.
+ * @returns each crowded block, by title (null for a draft without headings), with its line count.
+ */
+function crowdedBlocks(draft) {
+  const blocks = [{ title: null, lines: 0 }]
+  let fenced = false
+  let table = false
+  let opening = true
+  for (const raw of draft.split('\n')) {
+    const line = raw.trim()
+    if (/^(```|~~~)/.test(line)) {
+      // A code block is one line of its block, counted where it opens.
+      if (!fenced) blocks.at(-1).lines += 1
+      fenced = !fenced
+      continue
+    }
+    if (fenced) continue
+    if (line === '') {
+      table = false
+      continue
+    }
+    const heading = /^#{1,6}\s+(.+?)\s*#*$/.exec(line)
+    if (heading !== null) {
+      blocks.push({ title: plainTitle(heading[1]), lines: 0 })
+      table = false
+      continue
+    }
+    if (line.startsWith('|')) {
+      if (!table) blocks.at(-1).lines += 1
+      table = true
+      continue
+    }
+    table = false
+    // The opening paragraph is the conclusion, not one of the points.
+    if (opening && blocks.length === 1 && !/^([-*+]|\d+[.)])\s/.test(line)) {
+      opening = false
+      continue
+    }
+    opening = false
+    blocks.at(-1).lines += 1
+  }
+  const headed = blocks.length > 1
+  return blocks.filter((block) => (block.title === null
+    ? !headed && block.lines > MAX_FLAT_LINES
+    : block.lines > MAX_BLOCK_LINES))
 }
 
 /** Longest a line may be, in characters, and still be only a label for what follows. */
@@ -506,7 +571,7 @@ function leadIns(draft) {
 const MAX_PARAGRAPH_CHARS = 120
 
 /** Characters one list item may run to. */
-const MAX_ITEM_CHARS = 100
+const MAX_ITEM_CHARS = 120
 
 /**
  * The prose lines of a draft that pack several points into one: a paragraph
@@ -935,7 +1000,7 @@ export function apply(ctx, config) {
     const kind = problems.length === 0 ? 'tighten' : 'repair'
     const instruction = kind === 'tighten'
       ? `下面这段已经压过一遍，但还有 ${first.text.length} 字，超过 ${budget} 字的上限。${TIGHTEN[variant]}`
-      : `下面这段速览要再改一遍：${problems.join('')}${over ? `另外它还有 ${first.text.length} 字，超过 ${budget} 字的上限，${TIGHTEN[variant]}` : '内容不要增减。'}`
+      : `下面这段速览要再改一遍：${problems.join('')}${over ? `另外它还有 ${first.text.length} 字，超过 ${budget} 字的上限，${TIGHTEN[variant]}` : '除此之外内容不要增减。'}`
     trace.firstDraft = first.text
     // The second pass edits a draft by instruction: it needs little thought, and
     // left at the model's own effort it has spent ten times the draft on it.
