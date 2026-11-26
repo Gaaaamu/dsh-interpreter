@@ -294,6 +294,15 @@ window.__ModuleLoader__.load({
       { value: 'normal', label: '普通' },
       { value: 'detailed', label: '详细' },
     ];
+    /**
+     * The built-in prompt in force, in the same words the Host stores. 基准 runs the
+     * reader's own prompt when they wrote one, so the menu then calls it 自定义.
+     */
+    const VARIANT_LABEL = { baseline: '基准', roles: '角色版' };
+    const VARIANT_MENU = [
+      { value: 'baseline', label: '基准' },
+      { value: 'roles', label: '角色版（实验）' },
+    ];
     /** The answer's own language, or one fixed, in the same three words the Host stores. */
     const LANG_LABEL = { auto: '跟随', zh: '中文', en: '英文' };
     const LANG_MENU = [
@@ -394,13 +403,16 @@ window.__ModuleLoader__.load({
       const out = [];
       let last = 0;
       let match;
-      INLINE.lastIndex = 0;
-      while ((match = INLINE.exec(text)) !== null) {
+      // Its own cursor: bold and italic read their words with this same
+      // function, and a shared one would send the outer run back to the start.
+      const pattern = new RegExp(INLINE.source, 'g');
+      while ((match = pattern.exec(text)) !== null) {
         if (match.index > last) out.push(text.slice(last, match.index));
         const token = match[0];
         const key = `${prefix}-${match.index}`;
         let used = token.length;
-        if (token.startsWith('**')) out.push(h('strong', { key }, token.slice(2, -2)));
+        // Code, links and the like inside bold keep their own look.
+        if (token.startsWith('**')) out.push(h('strong', { key }, inline(token.slice(2, -2), key)));
         else if (token.startsWith('`')) out.push(h('code', { key }, token.slice(1, -1)));
         else if (token.startsWith('[')) {
           const link = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(token);
@@ -423,7 +435,7 @@ window.__ModuleLoader__.load({
           used = href.length;
           out.push(h('a', { key, href, target: '_blank', rel: 'noopener noreferrer' },
             linkGlyph(href, key), href));
-        } else out.push(h('em', { key }, token.slice(1, -1)));
+        } else out.push(h('em', { key }, inline(token.slice(1, -1), key)));
         last = match.index + used;
       }
       if (last < text.length) out.push(text.slice(last));
@@ -709,10 +721,11 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Change the mode, the allow-list, the length tier or the language. Only the
-     * change travels, never the whole list: every block holds its own copy, and a
-     * stale copy sent back would wipe out what another block added.
-     * @param change - `{ mode?, addSessions?, removeSessions?, length?, language? }`.
+     * Change the mode, the allow-list, the length tier, the language or the
+     * built-in prompt. Only the change travels, never the whole list: every block
+     * holds its own copy, and a stale copy sent back would wipe out what another
+     * block added.
+     * @param change - `{ mode?, addSessions?, removeSessions?, length?, language?, variant? }`.
      */
     function saveGate(change) {
       return fetch(CONFIG, {
@@ -747,11 +760,142 @@ window.__ModuleLoader__.load({
       return LANG_LABEL[gate?.language] === undefined ? 'auto' : gate.language;
     }
 
+    /**
+     * The built-in prompt a gate names, standing in with 基准 for anything else: an
+     * older Host, or a row written by hand in a newer vocabulary.
+     */
+    function effectiveVariant(gate) {
+      return VARIANT_LABEL[gate?.variant] === undefined ? 'baseline' : gate.variant;
+    }
+
+    /** The gate's switches as every block shares them, read from a Host reply. */
+    function gateOf(reply, previous) {
+      return {
+        mode: typeof reply.mode === 'string' ? reply.mode : previous?.mode ?? 'manual',
+        sessions: Array.isArray(reply.sessions) ? reply.sessions : previous?.sessions ?? [],
+        length: effectiveLength(reply),
+        language: effectiveLanguage(reply),
+        variant: effectiveVariant(reply),
+        ownPrompt: typeof reply.ownPrompt === 'boolean' ? reply.ownPrompt : previous?.ownPrompt === true,
+      };
+    }
+
     /** 12431 is harder to take in at a glance than 12.4k. */
     function formatTokens(count) {
       if (typeof count !== 'number' || !Number.isFinite(count) || count <= 0) return '';
       if (count < 1000) return String(count);
       return `${Math.round((count / 1000) * 10) / 10}k`;
+    }
+
+    /**
+     * A call's tokens as the reader can add them up. DeepSeek Harness counts
+     * cached prompt tokens apart from the input and folds thinking into the
+     * output, so the prompt is shown whole with its cached part, and the output
+     * with its thinking part: input and output then make the total.
+     * @param usage - the Host's token accounting for one call or a pair.
+     */
+    function usageWords(usage) {
+      const cached = usage.cacheReadTokens ?? 0;
+      const prompt = usage.inputTokens + cached + (usage.cacheWriteTokens ?? 0);
+      const thinking = usage.reasoningTokens ?? 0;
+      return `输入 ${prompt}${cached > 0 ? `（缓存命中 ${cached}）` : ''} · 输出 ${usage.outputTokens}${thinking > 0 ? `（思考 ${thinking}）` : ''} · 合计 ${usage.totalTokens}`;
+    }
+
+    /** Seconds of waiting not worth mentioning: most rewrites are back before this. */
+    const QUIET_WAIT_SECONDS = 10;
+
+    /** The wait beside 「整理中」, in the caption's voice. */
+    const WAITED = { marginLeft: 8, color: 'var(--dsw-alias-label-secondary, inherit)' };
+
+    /**
+     * How long a rewrite has been waited on, once it is long enough to say:
+     * 「已等 45 秒」, then 「已等 2 分 5 秒」.
+     * @param since - when the request went out, in milliseconds.
+     * @param now - the time to measure to.
+     */
+    function waitedWords(since, now) {
+      if (typeof since !== 'number') return '';
+      const seconds = Math.floor((now - since) / 1000);
+      if (seconds < QUIET_WAIT_SECONDS) return '';
+      return seconds < 60 ? `已等 ${seconds} 秒` : `已等 ${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
+    }
+
+    /**
+     * A size from the record in the unit the rewrite was told in: 字, or for
+     * an English answer words, at the Host's three half-width cells a word.
+     * @param size - a size in 字 as the Host counts them.
+     * @param trace - the record it comes from.
+     */
+    function sizeWords(size, trace) {
+      return trace.words === true ? `${Math.max(1, Math.round(size / 3))} 个词` : `${size} 字`;
+    }
+
+    /** What each call of a rewrite was for, in the reader's words. */
+    const CALL_LABEL = { draft: '初稿', tighten: '再压一遍', repair: '按排版问题重写' };
+
+    /** The layout code decided, or that it decided none. */
+    function layoutWords(trace) {
+      const outline = trace.outline;
+      if (outline === null || outline === undefined) return `不由代码定版式${trace.hint ? '（末尾在问读者，提醒保留）' : ''}`;
+      const sections = outline.sections.length;
+      const read = sections === 0 ? '原文没有分节' : `原文 ${sections} 节`;
+      return `${outline.blocks ? '分块' : '不分块'}（${read}${outline.asks ? '，末尾在等读者决定' : ''}）`;
+    }
+
+    /**
+     * One line on how a rewrite was made, for the cost's tooltip: the layout,
+     * how many calls, and which draft was kept.
+     * @param trace - what the Host recorded, or nothing from an older Host.
+     */
+    function traceLine(trace) {
+      if (trace === null || typeof trace !== 'object' || !Array.isArray(trace.calls)) return '';
+      const parts = [VARIANT_LABEL[trace.variant] ?? trace.variant, layoutWords(trace)];
+      const [draft, second] = trace.calls;
+      if (draft !== undefined) {
+        const found = draft.problems?.length ?? 0;
+        parts.push(`初稿 ${sizeWords(draft.chars, trace)}${draft.over ? '，超预算' : ''}${found > 0 ? `，${found} 处排版问题` : ''}`);
+      }
+      if (second === undefined) parts.push('1 次调用');
+      else if (second.failed !== undefined) parts.push(`${CALL_LABEL[second.kind] ?? second.kind}失败，用初稿`);
+      else parts.push(`${CALL_LABEL[second.kind] ?? second.kind}后 ${sizeWords(second.chars, trace)}，用${trace.kept === 2 ? '第二稿' : '初稿'}`);
+      return parts.join(' · ');
+    }
+
+    /**
+     * The whole record of a rewrite as Markdown, to copy and read side by side
+     * with the 速览: the budget, the layout and the words that told the model
+     * about it, each call with what code found in its draft, and the first draft
+     * when a second call replaced or tried to replace it.
+     * @param trace - what the Host recorded.
+     */
+    function traceText(trace) {
+      if (trace === null || typeof trace !== 'object' || !Array.isArray(trace.calls)) return '';
+      const lines = [
+        '# 速览生成过程',
+        '',
+        `- 写法：${VARIANT_LABEL[trace.variant] ?? trace.variant}`,
+        `- 原文 ${sizeWords(trace.original, trace)}，预算 ${sizeWords(trace.budget, trace)}`,
+        `- 版式：${layoutWords(trace)}`,
+      ];
+      const sections = trace.outline?.sections ?? [];
+      if (sections.length > 0) lines.push(`- 原文各节：${sections.map((title) => `「${title}」`).join('、')}`);
+      if (trace.hint) lines.push(`- ${trace.outline ? '告诉模型的版式' : '另外告诉模型'}：${trace.hint}`);
+      trace.calls.forEach((call, at) => {
+        lines.push('', `## 第 ${at + 1} 次调用：${CALL_LABEL[call.kind] ?? call.kind}`, '');
+        if (call.instruction) lines.push(`- 指令：${call.instruction}`);
+        if (call.effort) lines.push(`- 思考档位：${call.effort}`);
+        if (call.failed !== undefined) {
+          lines.push(`- 失败：${call.failed}`);
+          return;
+        }
+        lines.push(`- 结果 ${sizeWords(call.chars, trace)}${call.over ? '，超过预算 1.5 倍' : ''}`);
+        if (call.problems.length <= 1) lines.push(`- 代码查出的排版问题：${call.problems[0] ?? '无'}`);
+        else lines.push(`- 代码查出 ${call.problems.length} 处排版问题：`, ...call.problems.map((problem) => `  - ${problem}`));
+        if (call.usage) lines.push(`- tokens：${usageWords(call.usage)}`);
+      });
+      lines.push('', `最后用的是${trace.kept === 2 ? '第二稿' : '初稿'}。`);
+      if (typeof trace.firstDraft === 'string') lines.push('', '## 初稿全文', '', trace.firstDraft);
+      return lines.join('\n');
     }
 
     /** The mark that says which row is in force, without a sentence saying so. */
@@ -940,13 +1084,7 @@ window.__ModuleLoader__.load({
      * @param saved - the canonical reply a save answered with.
      */
     function publishGate(saved) {
-      const previous = gateStore.value;
-      setSharedGate({
-        mode: typeof saved.mode === 'string' ? saved.mode : previous?.mode ?? 'manual',
-        sessions: Array.isArray(saved.sessions) ? saved.sessions : previous?.sessions ?? [],
-        length: effectiveLength(saved),
-        language: effectiveLanguage(saved),
-      });
+      setSharedGate(gateOf(saved, gateStore.value));
     }
 
     function loadGate() {
@@ -956,19 +1094,14 @@ window.__ModuleLoader__.load({
         .then((result) => {
           if (result.status !== 'ok') throw new Error(result.message ?? '读不到设置');
           gateStore.failed = false;
-          setSharedGate({
-            mode: result.mode,
-            sessions: Array.isArray(result.sessions) ? result.sessions : [],
-            length: effectiveLength(result),
-            language: effectiveLanguage(result),
-          });
+          setSharedGate(gateOf(result, null));
         })
         .catch(() => {
           // Unreadable settings must not start spending: stand in with the
           // default, a folded line that waits for a click, and let the next
           // block that mounts try again.
           gateStore.failed = true;
-          setSharedGate({ mode: 'manual', sessions: [], length: 'normal', language: 'auto' });
+          setSharedGate({ mode: 'manual', sessions: [], length: 'normal', language: 'auto', variant: 'baseline', ownPrompt: false });
         })
         .finally(() => { gateStore.loading = false; });
     }
@@ -1057,7 +1190,7 @@ window.__ModuleLoader__.load({
       const [historic, setHistoric] = useState(false);
       /** The last failed save: it shows in the head, where the menu came from. */
       const [modeError, setModeError] = useState('');
-      /** Bumped when the length tier or the language changes: this block redoes its Turn. */
+      /** Bumped when the length tier, the language or the prompt changes: this block redoes its Turn. */
       const [revision, setRevision] = useState(0);
       /** The catalog, read the first time the menu opens and kept afterwards. */
       const [models, setModels] = useState(null);
@@ -1226,12 +1359,7 @@ window.__ModuleLoader__.load({
             if (!started && pick !== 'manual') setWanted(true);
             // The Host answers with the whole gate, other blocks' changes included.
             if (typeof result.mode === 'string' && Array.isArray(result.sessions)) {
-              setSharedGate({
-                mode: result.mode,
-                sessions: result.sessions,
-                length: effectiveLength(result),
-                language: effectiveLanguage(result),
-              });
+              setSharedGate(gateOf(result, previous));
             }
           })
           .catch((error) => {
@@ -1284,6 +1412,34 @@ window.__ModuleLoader__.load({
           });
       };
 
+      /**
+       * The prompt switch works like the language one: written through for every
+       * block, and only the block that was clicked redoes its Turn. Each prompt
+       * keeps its own cache, so flipping between them on one answer compares the
+       * two at the cost of one rewrite each.
+       */
+      const chooseVariant = (pick) => {
+        closeMenu();
+        setModeError('');
+        const previous = gate;
+        setSharedGate({ ...previous, variant: pick });
+        saveGate({ variant: pick })
+          .then((result) => {
+            if (result.status !== 'ok') throw new Error(result.message ?? '没保存上');
+            if (previous.variant !== pick && started) setRevision((n) => n + 1);
+          })
+          .catch((error) => {
+            setSharedGate(previous);
+            setModeError(error instanceof Error ? error.message : String(error));
+          });
+      };
+
+      /** The 基准 row's name: 自定义 while it runs the reader's own prompt. */
+      const variantLabel = (value, menu) => {
+        if (value === 'baseline' && gate?.ownPrompt === true) return '自定义';
+        return menu ? VARIANT_MENU.find((item) => item.value === value)?.label ?? '' : VARIANT_LABEL[value] ?? '';
+      };
+
       /** Clicking anywhere else folds the menu away. */
       useEffect(() => {
         if (!menuOpen) return undefined;
@@ -1295,7 +1451,7 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         if (!usable || !started) return undefined;
         let live = true;
-        setPhase({ kind: 'loading' });
+        setPhase({ kind: 'loading', since: Date.now() });
         requestRewrite(sessionId, seq, attempt > 0, !wanted)
           .then((result) => {
             if (!live) return;
@@ -1312,7 +1468,7 @@ window.__ModuleLoader__.load({
               setOpen(false);
               return;
             }
-            if (result.status === 'ok') setPhase({ kind: 'ready', text: result.text, usage: result.usage });
+            if (result.status === 'ok') setPhase({ kind: 'ready', text: result.text, usage: result.usage, trace: result.trace });
             else if (result.status === 'skip') setPhase({ kind: result.reason === 'too-long' ? 'toolong' : 'none' });
             else setPhase({ kind: 'failed', message: readableError(result.message ?? '') });
           })
@@ -1321,6 +1477,17 @@ window.__ModuleLoader__.load({
           });
         return () => { live = false; };
       }, [usable, started, sessionId, seq, attempt, revision]);
+
+      /**
+       * A rewrite that goes back for a second pass can take minutes; the wait
+       * says how long it has been, so a slow one does not look like a stuck one.
+       */
+      const [now, setNow] = useState(() => Date.now());
+      useEffect(() => {
+        if (phase.kind !== 'loading' || phase.since === undefined) return undefined;
+        const timer = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(timer);
+      }, [phase]);
 
       const parsed = useMemo(() => (phase.kind === 'ready' ? blocks(phase.text) : []), [phase]);
 
@@ -1357,7 +1524,10 @@ window.__ModuleLoader__.load({
             h('span', { className: 'ra-dots', 'aria-hidden': 'true' },
               h('span', null, '.'),
               h('span', { className: 'ra-dot2' }, '.'),
-              h('span', { className: 'ra-dot3' }, '.')))));
+              h('span', { className: 'ra-dot3' }, '.'))),
+          waitedWords(phase.since, now) === ''
+            ? null
+            : h('span', { key: 'waited', style: WAITED }, waitedWords(phase.since, now))));
       } else if (phase.kind === 'toolong') body.push(h('div', { key: 'long', style: MUTED }, '原文太长，这次没有整理'));
       else if (spent) {
         body.push(h('div', { key: 'spend', style: MUTED },
@@ -1376,11 +1546,13 @@ window.__ModuleLoader__.load({
 
       /** What one rewrite cost, written in the same small voice as the icon. */
       const usage = ready ? phase.usage : undefined;
+      /** How it was made, under what it cost: a line, never a panel. */
+      const made = ready ? traceLine(phase.trace) : '';
       const cost = usage === undefined
         ? null
         : h('span', {
             style: COST,
-            title: `输入 ${usage.inputTokens} · 输出 ${usage.outputTokens} · 合计 ${usage.totalTokens} tokens`,
+            title: `${usageWords(usage)} tokens${made === '' ? '' : `\n${made}`}`,
           }, `${formatTokens(usage.totalTokens)} tokens`);
 
       /**
@@ -1440,7 +1612,7 @@ window.__ModuleLoader__.load({
         h('span', { key: 'out', style: { ...CHECK_SLOT, transform: 'rotate(180deg)' } }, h(Chevron, { shown: false })),
         h('span', { style: ITEM_TEXT }, '返回'));
 
-      /** The card's contents: the four switches, or the list one of them opens. */
+      /** The card's contents: the five switches, or the list one of them opens. */
       let menuRows;
       if (view === 'mode') {
         const current = gate === null ? null : effectiveMode(gate, sessionId);
@@ -1459,6 +1631,12 @@ window.__ModuleLoader__.load({
         menuRows = [backRow, ...LANG_MENU.map((item) => menuRow(
           item.value, item.label, item.value === current, item.value === hover,
           () => chooseLanguage(item.value), () => setHover(item.value), () => setHover(null),
+        ))];
+      } else if (view === 'variant') {
+        const current = gate === null ? null : effectiveVariant(gate);
+        menuRows = [backRow, ...VARIANT_MENU.map((item) => menuRow(
+          item.value, variantLabel(item.value, true), item.value === current, item.value === hover,
+          () => chooseVariant(item.value), () => setHover(item.value), () => setHover(null),
         ))];
       } else if (view === 'model') {
         const rows = [];
@@ -1495,8 +1673,22 @@ window.__ModuleLoader__.load({
           valueRow('mode', '自动速览', gate === null ? '' : MODE_LABEL[effectiveMode(gate, sessionId)] ?? '', 'mode'),
           valueRow('length', '详略', gate === null ? '' : LENGTH_LABEL[effectiveLength(gate)] ?? '', 'length'),
           valueRow('language', '语言', gate === null ? '' : LANG_LABEL[effectiveLanguage(gate)] ?? '', 'language'),
+          valueRow('variant', '提示词', gate === null ? '' : variantLabel(effectiveVariant(gate), false), 'variant'),
           valueRow('model', '模型', modelLabel(), 'model'),
           h('div', { key: 'split', style: DIVIDER }),
+          // Only a finished rewrite has a record to copy.
+          ready && traceText(phase.trace) !== ''
+            ? h('button', {
+                key: 'trace',
+                style: { ...ITEM, ...(hover === 'trace' ? ITEM_HOVER : null) },
+                onMouseEnter: () => setHover('trace'),
+                onMouseLeave: () => setHover(null),
+                onClick: () => {
+                  copyText(traceText(phase.trace)).then((done) => setCopyState(done ? 'copied' : 'failed'));
+                  closeMenu();
+                },
+              }, h('span', { style: ITEM_TEXT }, '复制生成过程'))
+            : null,
           h('button', {
             key: 'settings',
             style: { ...ITEM, ...(hover === 'settings' ? ITEM_HOVER : null) },
@@ -1700,7 +1892,10 @@ window.__ModuleLoader__.load({
       const [modelOpen, setModelOpen] = useState(false);
       const [length, setLength] = useState('normal');
       const [language, setLanguage] = useState('auto');
+      const [variant, setVariant] = useState('baseline');
       const [defaultPrompt, setDefaultPrompt] = useState('');
+      /** The built-in 角色版 text, shown read-only while that prompt is in force. */
+      const [rolePrompt, setRolePrompt] = useState('');
       const [tokensToday, setTokensToday] = useState(0);
       const [saving, setSaving] = useState(false);
       const [error, setError] = useState('');
@@ -1719,17 +1914,20 @@ window.__ModuleLoader__.load({
             const nextDraft = draftOf(gate.settings);
             const nextLength = effectiveLength(gate);
             const nextLanguage = effectiveLanguage(gate);
+            const nextVariant = effectiveVariant(gate);
             // No model chosen yet is a real state: the row must stay empty rather
             // than become a `::` pair the Host would refuse.
             const nextModel = catalog.provider === '' || catalog.model === '' ? '' : `${catalog.provider}::${catalog.model}`;
             setDraft(nextDraft);
             setLength(nextLength);
             setLanguage(nextLanguage);
+            setVariant(nextVariant);
             setModel(nextModel);
             setModels({ providers: catalog.providers });
             setDefaultPrompt(typeof gate.defaultPrompt === 'string' ? gate.defaultPrompt : '');
+            setRolePrompt(typeof gate.builtInPrompts?.roles === 'string' ? gate.builtInPrompts.roles : '');
             setTokensToday(typeof gate.tokensToday === 'number' && Number.isFinite(gate.tokensToday) ? gate.tokensToday : 0);
-            setInitial({ draft: nextDraft, model: nextModel, length: nextLength, language: nextLanguage });
+            setInitial({ draft: nextDraft, model: nextModel, length: nextLength, language: nextLanguage, variant: nextVariant });
             setState({ kind: 'ready' });
           },
           (failure) => setState({
@@ -1770,6 +1968,7 @@ window.__ModuleLoader__.load({
         model !== initial.model
         || length !== initial.length
         || language !== initial.language
+        || variant !== initial.variant
         || Object.keys(initial.draft).some((key) => draft[key] !== initial.draft[key])
       );
 
@@ -1799,6 +1998,7 @@ window.__ModuleLoader__.load({
           ...rows,
           length,
           language,
+          variant,
           // The pair is the one thing the Host will not take half of.
           ...(model === '' || !provider || !id ? null : { provider, model: id }),
         })
@@ -1811,7 +2011,7 @@ window.__ModuleLoader__.load({
             // shared gate, so their menus are current the moment the reader returns.
             publishGate(result);
             setDraft(nextDraft);
-            setInitial({ draft: nextDraft, model, length, language });
+            setInitial({ draft: nextDraft, model, length, language, variant });
             setSaved(true);
           })
           .catch((failure) => {
@@ -1936,9 +2136,12 @@ window.__ModuleLoader__.load({
                     ]))
             : null);
 
-        const promptText = draft?.prompt ?? '';
+        // 角色版 is built in and not editable: the box shows it, read-only, and the
+        // reader's own text waits untouched for 基准.
+        const showsRoles = variant === 'roles' && rolePrompt !== '';
+        const promptText = showsRoles ? rolePrompt : draft?.prompt ?? '';
         const promptLen = promptText.length;
-        const promptCustomized = defaultPrompt !== '' && promptText !== defaultPrompt;
+        const promptCustomized = !showsRoles && defaultPrompt !== '' && promptText !== defaultPrompt;
 
         const rawTemp = Number(draft?.temperature);
         const sliderTemp = Number.isFinite(rawTemp) ? Math.min(2, Math.max(0, rawTemp)) : 0.3;
@@ -1956,11 +2159,15 @@ window.__ModuleLoader__.load({
           h('div', { className: 'ra-set-card' },
             cardRow('model', '模型', modelPicker),
             cardRow('length', '详略', segment(LENGTH_MENU, length, setLength)),
-            cardRow('language', '语言', segment(LANG_MENU, language, setLanguage))),
+            cardRow('language', '语言', segment(LANG_MENU, language, setLanguage)),
+            cardRow('variant', '提示词', segment(VARIANT_MENU, variant, setVariant), {
+              tip: '基准是一直以来的写法，下面改过的提示词就用在它上面；角色版按每块内容的作用取舍，是内置的实验写法，不能改。两种各自缓存，可以在同一条回答上来回对比。',
+            })),
           h('section', { className: 'ra-set-section' },
             h('div', { className: 'ra-set-sec-bar' },
-              h('span', { className: 'ra-set-head' }, '提示词'),
+              h('span', { className: 'ra-set-head' }, showsRoles ? '角色版提示词' : '基准提示词'),
               h('span', { className: 'ra-set-sec-meta' },
+                showsRoles ? h('span', { key: 'fixed' }, '内置 · 只读') : null,
                 promptCustomized
                   ? h('button', {
                       type: 'button',
@@ -1981,7 +2188,8 @@ window.__ModuleLoader__.load({
               spellCheck: false,
               maxLength: MAX_PROMPT_CHARS,
               value: promptText,
-              onChange: edit('prompt'),
+              readOnly: showsRoles,
+              onChange: showsRoles ? undefined : edit('prompt'),
             })),
           h('section', { className: 'ra-set-section' },
             h('div', { className: 'ra-set-sec-bar' },
@@ -2059,7 +2267,7 @@ window.__ModuleLoader__.load({
 
     // The test suite reaches the pure helpers through this hook; the app never sets it.
     if (typeof window.__DSH_INTERPRETER_TEST__ === 'function') {
-      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText, draftOf, readDraft, resolveModelLabel });
+      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText, draftOf, readDraft, resolveModelLabel, traceLine, traceText, waitedWords });
     }
 
     return {

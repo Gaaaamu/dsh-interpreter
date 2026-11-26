@@ -23,7 +23,7 @@ globalThis.window = {
   __DSH_INTERPRETER_TEST__: (exposed) => { helpers = exposed },
 }
 new Function(source)()
-const { blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText, draftOf, readDraft, resolveModelLabel } = helpers
+const { blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText, draftOf, readDraft, resolveModelLabel, traceLine, traceText, waitedWords } = helpers
 
 /** The href of every link in an inline run, or the text where a node is text. */
 const hrefs = (text) => inline(text, 'k').map((node) => (typeof node === 'string' ? node : node.props.href ?? node.type))
@@ -45,6 +45,18 @@ test('emphasis needs to hug its words', () => {
   assert.deepEqual(hrefs('an *important* word'), ['an ', 'em', ' word'])
   assert.deepEqual(hrefs('*x*'), ['em'])
   assert.deepEqual(hrefs('**bold**'), ['strong'])
+})
+
+test('code and links inside bold keep their own look', () => {
+  const [strong] = inline('**`Cache-Control` 管新鲜期**；其余', 'k')
+  assert.equal(strong.type, 'strong')
+  assert.equal(strong.children[0].type, 'code')
+  assert.equal(strong.children[0].children[0], 'Cache-Control')
+  assert.equal(strong.children[1], ' 管新鲜期')
+  // The outer run carries on after the bold, not from its start.
+  const nodes = inline('a **`x`** b `y` c', 'k')
+  assert.deepEqual(nodes.map((node) => (typeof node === 'string' ? node : node.type)), ['a ', 'strong', ' b ', 'code', ' c'])
+  assert.equal(inline('*see `z`*', 'k')[0].children[1].type, 'code')
 })
 
 test('table cells keep escaped pipes and pipes inside code', () => {
@@ -252,4 +264,66 @@ test('model labels resolve display names and fall back cleanly when missing', ()
   assert.deepEqual(resolveModelLabel('', providers), { empty: true, name: '选择模型', provider: '' })
   assert.deepEqual(resolveModelLabel('ds::chat', providers), { empty: false, name: 'DeepSeek Chat', provider: 'DeepSeek' })
   assert.deepEqual(resolveModelLabel('other::v1', providers), { empty: false, name: 'v1', provider: 'other' })
+})
+
+test('a rewrite says how it was made, in a line and in full', () => {
+  const usage = { inputTokens: 3000, outputTokens: 400, totalTokens: 3400 }
+  const single = {
+    variant: 'roles', original: 3080, budget: 900, kept: 1,
+    outline: { sections: ['一、强缓存', '二、协商缓存', '三、怎么配'], blocks: true, asks: false },
+    hint: '原文分 3 节：…',
+    calls: [{ kind: 'draft', chars: 620, over: false, problems: [], usage }],
+  }
+  assert.equal(traceLine(single), '角色版 · 分块（原文 3 节） · 初稿 620 字 · 1 次调用')
+  const full = traceText(single)
+  assert.match(full, /原文各节：「一、强缓存」、「二、协商缓存」、「三、怎么配」/)
+  assert.match(full, /告诉模型的版式：原文分 3 节/)
+  assert.match(full, /代码查出的排版问题：无/)
+  assert.doesNotMatch(full, /初稿全文/)
+
+  const repaired = {
+    ...single,
+    kept: 2,
+    firstDraft: '结论。\n\n- 一',
+    calls: [
+      { kind: 'draft', chars: 1500, over: true, problems: ['没有分块：…'], usage },
+      { kind: 'repair', instruction: '下面这段速览要再改一遍：…', effort: 'low', chars: 700, problems: [], usage },
+    ],
+  }
+  assert.equal(traceLine(repaired), '角色版 · 分块（原文 3 节） · 初稿 1500 字，超预算，1 处排版问题 · 按排版问题重写后 700 字，用第二稿')
+  assert.match(traceText(repaired), /## 第 2 次调用：按排版问题重写[\s\S]*最后用的是第二稿。[\s\S]*## 初稿全文\n\n结论。/)
+  assert.match(traceText(repaired), /代码查出的排版问题：没有分块：…/)
+  assert.match(traceText(repaired), /- 指令：下面这段速览要再改一遍：…\n- 思考档位：low\n/)
+  assert.doesNotMatch(traceText(single), /思考档位/)
+
+  // Several faults are listed one per line; tokens add up, with the cached and thinking parts inside.
+  const cached = { inputTokens: 7, cacheReadTokens: 2944, cacheWriteTokens: 0, outputTokens: 973, reasoningTokens: 400, totalTokens: 3924 }
+  const many = { ...repaired, calls: [{ ...repaired.calls[0], problems: ['一。', '二。'], usage: cached }, repaired.calls[1]] }
+  assert.match(traceText(many), /- 代码查出 2 处排版问题：\n  - 一。\n  - 二。/)
+  assert.match(traceText(many), /tokens：输入 2951（缓存命中 2944） · 输出 973（思考 400） · 合计 3924/)
+  assert.match(traceText(single), /tokens：输入 3000 · 输出 400 · 合计 3400/)
+
+  const failed = { ...repaired, kept: 1, calls: [repaired.calls[0], { kind: 'tighten', instruction: 'x', failed: 'RATE: limited' }] }
+  assert.match(traceLine(failed), /再压一遍失败，用初稿$/)
+  assert.equal(traceLine({ variant: 'baseline', outline: null, calls: [{ kind: 'draft', chars: 300, problems: [] }] }), '基准 · 不由代码定版式 · 初稿 300 字 · 1 次调用')
+  // An English answer's record speaks in words, as the model was told.
+  assert.equal(traceLine({ variant: 'baseline', outline: null, words: true, calls: [{ kind: 'draft', chars: 300, problems: [] }] }), '基准 · 不由代码定版式 · 初稿 100 个词 · 1 次调用')
+  assert.match(traceText({ variant: 'baseline', original: 3300, budget: 900, words: true, outline: null, calls: [] }), /原文 1100 个词，预算 300 个词/)
+  // 基准 told to keep the questions an answer ends on says so, and does not call it a layout.
+  const asked = { variant: 'baseline', original: 900, budget: 300, outline: null, hint: '原文最后在问读者问题：……', calls: [{ kind: 'draft', chars: 280, problems: [] }] }
+  assert.equal(traceLine(asked), '基准 · 不由代码定版式（末尾在问读者，提醒保留） · 初稿 280 字 · 1 次调用')
+  assert.match(traceText(asked), /- 另外告诉模型：原文最后在问读者问题/)
+  assert.doesNotMatch(traceText(asked), /告诉模型的版式/)
+  // An older Host sends no record: nothing to say, nothing to copy.
+  assert.equal(traceLine(undefined), '')
+  assert.equal(traceText(undefined), '')
+})
+
+test('a long wait says how long it has been', () => {
+  const since = 1_000_000
+  assert.equal(waitedWords(since, since + 9_999), '')
+  assert.equal(waitedWords(since, since + 45_000), '已等 45 秒')
+  assert.equal(waitedWords(since, since + 125_400), '已等 2 分 5 秒')
+  // The first render's phase carries no start time: nothing to say.
+  assert.equal(waitedWords(undefined, since), '')
 })
