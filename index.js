@@ -410,7 +410,8 @@ function plainTitle(raw) {
   if (title.length <= MAX_TITLE_CHARS) return title
   const cut = title.slice(0, MAX_TITLE_CHARS)
   const space = /\s/.test(title[MAX_TITLE_CHARS]) ? MAX_TITLE_CHARS : cut.lastIndexOf(' ')
-  return `${space > MAX_TITLE_CHARS / 2 ? cut.slice(0, space).trimEnd() : cut}…`
+  const kept = space > MAX_TITLE_CHARS / 2 ? cut.slice(0, space) : cut
+  return `${kept.replace(/[\s,，;；:：、]+$/, '')}…`
 }
 
 /**
@@ -454,10 +455,28 @@ function outlineOf(text, budget) {
       break
     }
   }
-  const prose = text.replace(/```[\s\S]*?```/g, '').trim()
-  const asks = prose.includes(QUESTION_LEAD) || /[?？]$/.test(prose)
-  return { sections, blocks: sections.length >= MIN_SECTIONS && budget >= MIN_BLOCK_BUDGET, asks }
+  return { sections, blocks: sections.length >= MIN_SECTIONS && budget >= MIN_BLOCK_BUDGET, asks: asksReader(text) }
 }
+
+/**
+ * Whether an answer ends by asking the reader something: its prose, code set
+ * aside, ends on a question mark, or it carried questions as raw markup.
+ * @param text - the answer, raw questions already said in words.
+ */
+function asksReader(text) {
+  const prose = text.replace(/```[\s\S]*?```/g, '').trim()
+  return prose.includes(QUESTION_LEAD) || /[?？]$/.test(prose)
+}
+
+/**
+ * What 基准 is told when the answer ends by asking the reader something. Its
+ * prompt is about cutting, and on its own it cut an answer's closing questions
+ * whole: the reader of the 速览 never learned they were being asked.
+ */
+const ASK_HINT = '原文最后在问读者问题：这些问题照原样放在速览末尾，一个问题一条，不要删，也不要改写成陈述句。'
+
+/** The same, said again when 基准 is told to cut a draft further. */
+const ASK_KEEP = '原文末尾问读者的问题一条都不能丢。'
 
 /**
  * The layout the scan decided, said to the model after the budget: headed
@@ -1042,7 +1061,10 @@ export function apply(ctx, config) {
     const language = languageRule(options)
     const variant = variantOf(options)
     const outline = variant === 'roles' ? outlineOf(text, budget) : undefined
-    const layout = outline === undefined ? '' : layoutHint(outline)
+    // 基准 is not told a layout, but a question the answer ends on must survive it too.
+    const asks = outline === undefined && asksReader(text)
+    const layout = outline === undefined ? (asks ? ASK_HINT : '') : layoutHint(outline)
+    const tighten = `${TIGHTEN[variant]}${asks ? ASK_KEEP : ''}`
     /**
      * What happened on the way, for the reader who wants to see it: the layout
      * code decided, each call and what code found in its draft, and which draft
@@ -1069,8 +1091,8 @@ export function apply(ctx, config) {
     /** Over budget alone keeps the long-standing words; a layout fault says what to fix. */
     const kind = problems.length === 0 ? 'tighten' : 'repair'
     const instruction = kind === 'tighten'
-      ? `下面这段已经压过一遍，但还有 ${said(firstSize)}，超过 ${said(budget)}的上限。${TIGHTEN[variant]}`
-      : `下面这段速览要再改一遍：${problems.join('')}${over ? `另外它还有 ${said(firstSize)}，超过 ${said(budget)}的上限，${TIGHTEN[variant]}` : '除此之外内容不要增减。'}`
+      ? `下面这段已经压过一遍，但还有 ${said(firstSize)}，超过 ${said(budget)}的上限。${tighten}`
+      : `下面这段速览要再改一遍：${problems.join('')}${over ? `另外它还有 ${said(firstSize)}，超过 ${said(budget)}的上限，${tighten}` : '除此之外内容不要增减。'}`
     trace.firstDraft = first.text
     // The second pass edits a draft by instruction: it needs little thought, and
     // left at the model's own effort it has spent ten times the draft on it.

@@ -836,7 +836,7 @@ window.__ModuleLoader__.load({
     /** The layout code decided, or that it decided none. */
     function layoutWords(trace) {
       const outline = trace.outline;
-      if (outline === null || outline === undefined) return '不由代码定版式';
+      if (outline === null || outline === undefined) return `不由代码定版式${trace.hint ? '（末尾在问读者，提醒保留）' : ''}`;
       const sections = outline.sections.length;
       const read = sections === 0 ? '原文没有分节' : `原文 ${sections} 节`;
       return `${outline.blocks ? '分块' : '不分块'}（${read}${outline.asks ? '，末尾在等读者决定' : ''}）`;
@@ -879,7 +879,7 @@ window.__ModuleLoader__.load({
       ];
       const sections = trace.outline?.sections ?? [];
       if (sections.length > 0) lines.push(`- 原文各节：${sections.map((title) => `「${title}」`).join('、')}`);
-      if (trace.hint) lines.push(`- 告诉模型的版式：${trace.hint}`);
+      if (trace.hint) lines.push(`- ${trace.outline ? '告诉模型的版式' : '另外告诉模型'}：${trace.hint}`);
       trace.calls.forEach((call, at) => {
         lines.push('', `## 第 ${at + 1} 次调用：${CALL_LABEL[call.kind] ?? call.kind}`, '');
         if (call.instruction) lines.push(`- 指令：${call.instruction}`);

@@ -309,6 +309,11 @@ test('a rewrite says how it was made, in a line and in full', () => {
   // An English answer's record speaks in words, as the model was told.
   assert.equal(traceLine({ variant: 'baseline', outline: null, words: true, calls: [{ kind: 'draft', chars: 300, problems: [] }] }), '基准 · 不由代码定版式 · 初稿 100 个词 · 1 次调用')
   assert.match(traceText({ variant: 'baseline', original: 3300, budget: 900, words: true, outline: null, calls: [] }), /原文 1100 个词，预算 300 个词/)
+  // 基准 told to keep the questions an answer ends on says so, and does not call it a layout.
+  const asked = { variant: 'baseline', original: 900, budget: 300, outline: null, hint: '原文最后在问读者问题：……', calls: [{ kind: 'draft', chars: 280, problems: [] }] }
+  assert.equal(traceLine(asked), '基准 · 不由代码定版式（末尾在问读者，提醒保留） · 初稿 280 字 · 1 次调用')
+  assert.match(traceText(asked), /- 另外告诉模型：原文最后在问读者问题/)
+  assert.doesNotMatch(traceText(asked), /告诉模型的版式/)
   // An older Host sends no record: nothing to say, nothing to copy.
   assert.equal(traceLine(undefined), '')
   assert.equal(traceText(undefined), '')

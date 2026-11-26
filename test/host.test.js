@@ -342,12 +342,13 @@ test('a long English heading is quoted to the model cut after a whole word', asy
     text: [
       '## 1. Create the project directory and venv', body,
       '## 2. Compile the lock file with pip-tools', body,
+      '## 3. Commit the pins, ignore the venv', body,
       '## Common pitfalls', body,
     ].join('\n\n'),
   }])
   const result = await h.rewrite({ sessionId: 's', seq: 1 }).done
-  assert.deepEqual(result.trace.outline.sections, ['1. Create the project…', '2. Compile the lock file…', 'Common pitfalls'])
-  assert.match(prompts[0], /「1\. Create the project…」、「2\. Compile the lock file…」、「Common pitfalls」/)
+  assert.deepEqual(result.trace.outline.sections, ['1. Create the project…', '2. Compile the lock file…', '3. Commit the pins…', 'Common pitfalls'])
+  assert.match(prompts[0], /「1\. Create the project…」、「2\. Compile the lock file…」、「3\. Commit the pins…」、「Common pitfalls」/)
   await h.cleanup()
 })
 
@@ -1070,6 +1071,23 @@ test('基准 gets no layout hint and no layout check', async () => {
   assert.equal(h.state.calls, 1)
   assert.equal(result.trace.outline, null)
   assert.equal(result.trace.calls.length, 1)
+  await h.cleanup()
+})
+
+test('基准 is told to keep the questions an answer ends on, through a second pass too', async () => {
+  const prompts = []
+  const h = await host(async function* (request) {
+    prompts.push(request.messages[0].content[0].text)
+    // Twice the budget: the draft goes back to be cut.
+    yield { type: 'text-delta', text: prompts.length === 1 ? '字'.repeat(500) : '短' }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  })
+  h.setLog([{ ...answer(), text: `${'字'.repeat(600)}\n\n你更倾向哪一个？` }])
+  const result = await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.match(prompts[0], /以内。原文最后在问读者问题：这些问题照原样放在速览末尾，一个问题一条/)
+  assert.match(prompts[1], /关键数字和命令不能丢。原文末尾问读者的问题一条都不能丢。/)
+  assert.equal(result.trace.outline, null)
+  assert.match(result.trace.hint, /^原文最后在问读者问题/)
   await h.cleanup()
 })
 
