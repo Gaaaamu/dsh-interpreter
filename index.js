@@ -417,13 +417,40 @@ function layoutHint(outline) {
   const said = outline.blocks
     ? `原文分 ${outline.sections.length} 节：${outline.sections.map((title) => `「${title}」`).join('、')}。速览按这个顺序合并成 2–${MAX_BLOCKS} 块，每块用 #### 小标题，标题用内容本身的词。`
     : '这条速览不用分块：写成一句结论加几条要点，不用小标题。'
-  return outline.asks ? `${said}原文最后在请读者做决定：把要决定的事和各选项的代价放在结论之后。` : said
+  if (!outline.asks) return said
+  const decide = outline.blocks
+    ? '结论之后的第一块就写这件事，算在块数里，标题用要决定的事本身'
+    : '结论之后先写这件事'
+  return `${said}原文最后在请读者做决定：${decide}；原文问读者的问题照原样列出，一个问题一条，不要改写成「补充……」这类陈述句，有选项和代价的一起留。`
 }
+
+/** Quotes of packed lines the repair instruction names; the rest go as a count. */
+const MAX_QUOTED = 3
 
 /**
  * What is wrong with a draft's layout, checked by code against the layout the
- * scan decided: each entry is an instruction for the repair pass, and none
- * means the draft stands. Only layout is checked; content is the prompt's job.
+ * scan decided. Each problem is an instruction for the repair pass, lines that
+ * pack several points going as one with a few of them quoted, so a long draft
+ * does not send back a long list; none means the draft stands. Only layout is
+ * checked; content is the prompt's job.
+ * @param draft - the model's 速览.
+ * @param outline - what {@link outlineOf} saw of the answer.
+ * @returns the instructions, and how many faults they stand for, each packed
+ * line counted once, to weigh a repair against the draft it replaces.
+ */
+function layoutCheck(draft, outline) {
+  const problems = layoutProblems(draft, outline)
+  const packed = packedLines(draft)
+  if (packed.length > 0) {
+    const quoted = packed.slice(0, MAX_QUOTED).map((line) => `「${line.quote}」（${line.points} 件）`).join('')
+    problems.push(`有 ${packed.length} 处把几件事塞进了一段或一条：${quoted}${packed.length > MAX_QUOTED ? '等' : ''}。拆成要点，一条只说一件事，不用分号串；拆出来的要点留在原来那块里，不要为它们新加小标题。`)
+  }
+  return { problems, faults: problems.length + Math.max(0, packed.length - 1) }
+}
+
+/**
+ * The faults of a draft's layout other than packed lines, each said as an
+ * instruction for the repair pass.
  * @param draft - the model's 速览.
  * @param outline - what {@link outlineOf} saw of the answer.
  */
@@ -439,9 +466,6 @@ function layoutProblems(draft, outline) {
   if (!outline.blocks && titles.length > 0) problems.push('这条不用分块：去掉小标题，写成一句结论加几条要点。')
   const named = titles.filter((title) => CATEGORY_WORDS.has(title.replace(/\s/g, '')))
   if (named.length > 0) problems.push(`小标题${named.map((title) => `「${title}」`).join('')}是分类名，换成内容本身的词。`)
-  for (const line of packedLines(draft)) {
-    problems.push(`「${line.quote}」这一${line.item ? '条' : '段'}塞了 ${line.points} 件事：拆成几条要点，一条只说一件事，不用分号串。`)
-  }
   for (const lead of leadIns(draft)) problems.push(`「${lead.label}」只是个标签：小标题已经说清时删掉这一行，直接给${lead.before}；没说清就换成一句交代${lead.before}讲什么的话。`)
   return problems
 }
@@ -718,13 +742,6 @@ export function apply(ctx, config) {
     if (cache.size > MAX_CACHE_ENTRIES) cache.delete(cache.keys().next().value)
   }
 
-  /**
-   * One model call, collected into plain text.
-   * @param instruction - what the model reads as its user message.
-   * @param sessionId - routes the call; some providers reject calls without one.
-   * @param options - the settings in force for this call.
-   * @param signal - aborts with the HTTP request.
-   */
   /** Token accounting for one call, trimmed to the fields the block shows. */
   function normalizeUsage(usage) {
     if (usage === undefined || usage === null) return undefined
@@ -757,10 +774,47 @@ export function apply(ctx, config) {
     }
   }
 
-  async function ask(instruction, sessionId, options, signal) {
+  /** Reasoning efforts a second pass may run at, lightest first. */
+  const LIGHT_EFFORTS = ['off', 'minimal', 'low']
+
+  /** The lightest effort each provider/model offers, or null where it offers none. */
+  const efforts = new Map()
+
+  /**
+   * The lightest reasoning effort the rewrite model offers, read from the
+   * model list once per model. Nothing where the model lists no efforts or
+   * the list cannot be read: the call then runs at the model's own default.
+   * @param options - the settings in force for this call.
+   */
+  async function lightEffort(options) {
+    const key = `${options.provider}/${options.model}`
+    if (!efforts.has(key)) {
+      let found = null
+      try {
+        const models = await ctx.llm.listModels(options.provider)
+        const offered = (models.find((model) => model.id === options.model)?.reasoning?.efforts ?? []).map((item) => item.id)
+        found = LIGHT_EFFORTS.find((id) => offered.includes(id)) ?? null
+      } catch {
+        found = null
+      }
+      efforts.set(key, found)
+    }
+    return efforts.get(key) ?? undefined
+  }
+
+  /**
+   * One model call, collected into plain text.
+   * @param instruction - what the model reads as its user message.
+   * @param sessionId - routes the call; some providers reject calls without one.
+   * @param options - the settings in force for this call.
+   * @param signal - aborts with the HTTP request.
+   * @param effort - a reasoning effort the model offers, or nothing for its default.
+   */
+  async function ask(instruction, sessionId, options, signal, effort) {
     const stream = ctx.llm.stream({
       provider: options.provider,
       model: options.model,
+      ...(effort === undefined ? {} : { reasoningEffort: effort }),
       system: promptOf(options),
       messages: [{ role: 'user', content: [{ type: 'text', text: instruction }] }],
       temperature: options.temperature,
@@ -859,10 +913,10 @@ export function apply(ctx, config) {
       calls: [],
       kept: 1,
     }
-    const check = (draft) => (outline === undefined ? [] : layoutProblems(draft, outline))
+    const check = (draft) => (outline === undefined ? { problems: [], faults: 0 } : layoutCheck(draft, outline))
     const first = await ask(`${text}\n\n---\n原文 ${text.length} 字，速览请控制在 ${budget} 字以内。${layout}${language}`, sessionId, options, signal)
     const over = first.text.length > budget * 1.5
-    const problems = check(first.text)
+    const { problems, faults } = check(first.text)
     trace.calls.push({ kind: 'draft', chars: first.text.length, over, problems, usage: first.usage })
     if (!over && problems.length === 0) return { ...first, trace }
     /** Over budget alone keeps the long-standing words; a layout fault says what to fix. */
@@ -871,19 +925,22 @@ export function apply(ctx, config) {
       ? `下面这段已经压过一遍，但还有 ${first.text.length} 字，超过 ${budget} 字的上限。${TIGHTEN[variant]}`
       : `下面这段速览要再改一遍：${problems.join('')}${over ? `另外它还有 ${first.text.length} 字，超过 ${budget} 字的上限，${TIGHTEN[variant]}` : '内容不要增减。'}`
     trace.firstDraft = first.text
+    // The second pass edits a draft by instruction: it needs little thought, and
+    // left at the model's own effort it has spent ten times the draft on it.
+    const effort = await lightEffort(options)
     let second
     try {
-      second = await ask(`${instruction}${language}\n\n${first.text}`, sessionId, options, signal)
+      second = await ask(`${instruction}${language}\n\n${first.text}`, sessionId, options, signal, effort)
     } catch (error) {
       // The first draft is already paid for and usable: a failed second pass
       // must not throw it away.
-      trace.calls.push({ kind, instruction, failed: error instanceof Error ? error.message : String(error) })
+      trace.calls.push({ kind, instruction, effort, failed: error instanceof Error ? error.message : String(error) })
       return { ...first, trace }
     }
     /** Fewer layout faults wins, then the shorter; a tie keeps the first. */
     const left = check(second.text)
-    trace.calls.push({ kind, instruction, chars: second.text.length, problems: left, usage: second.usage })
-    const better = left.length < problems.length || (left.length === problems.length && second.text.length < first.text.length)
+    trace.calls.push({ kind, instruction, effort, chars: second.text.length, problems: left.problems, usage: second.usage })
+    const better = left.faults < faults || (left.faults === faults && second.text.length < first.text.length)
     trace.kept = better ? 2 : 1
     const best = better ? second : first
     return { text: best.text, usage: mergeUsage(first.usage, second.usage), trace }

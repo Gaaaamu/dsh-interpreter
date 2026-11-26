@@ -854,6 +854,7 @@ window.__ModuleLoader__.load({
       trace.calls.forEach((call, at) => {
         lines.push('', `## 第 ${at + 1} 次调用：${CALL_LABEL[call.kind] ?? call.kind}`, '');
         if (call.instruction) lines.push(`- 指令：${call.instruction}`);
+        if (call.effort) lines.push(`- 思考档位：${call.effort}`);
         if (call.failed !== undefined) {
           lines.push(`- 失败：${call.failed}`);
           return;

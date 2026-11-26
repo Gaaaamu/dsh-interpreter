@@ -287,12 +287,14 @@ test('a rewrite says how it was made, in a line and in full', () => {
     firstDraft: '结论。\n\n- 一',
     calls: [
       { kind: 'draft', chars: 1500, over: true, problems: ['没有分块：…'], usage },
-      { kind: 'repair', instruction: '下面这段速览要再改一遍：…', chars: 700, problems: [], usage },
+      { kind: 'repair', instruction: '下面这段速览要再改一遍：…', effort: 'low', chars: 700, problems: [], usage },
     ],
   }
   assert.equal(traceLine(repaired), '角色版 · 分块（原文 3 节） · 初稿 1500 字，超预算，1 处排版问题 · 按排版问题重写后 700 字，用第二稿')
   assert.match(traceText(repaired), /## 第 2 次调用：按排版问题重写[\s\S]*最后用的是第二稿。[\s\S]*## 初稿全文\n\n结论。/)
   assert.match(traceText(repaired), /代码查出的排版问题：没有分块：…/)
+  assert.match(traceText(repaired), /- 指令：下面这段速览要再改一遍：…\n- 思考档位：low\n/)
+  assert.doesNotMatch(traceText(single), /思考档位/)
 
   // Several faults are listed one per line; tokens add up, with the cached and thinking parts inside.
   const cached = { inputTokens: 7, cacheReadTokens: 2944, cacheWriteTokens: 0, outputTokens: 973, reasoningTokens: 400, totalTokens: 3924 }

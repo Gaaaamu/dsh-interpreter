@@ -59,7 +59,7 @@ async function host(model, options = {}) {
     sessions: { get: () => session },
     llm: {
       listProviders: () => [{ id: 'p' }],
-      listModels: async () => [{ id: 'm' }, { id: 'm2' }],
+      listModels: async () => options.models ?? [{ id: 'm' }, { id: 'm2' }],
       async *stream(request) {
         state.calls += 1
         state.models.push(request.model)
@@ -758,11 +758,16 @@ test('角色版 is told the layout code read from the answer', async () => {
   // An answer that ends by asking puts the decision first, whether asked in prose or by the tool.
   h.setLog([{ ...answer(), text: `${LONG}\n\n要我按这个改吗？` }])
   await h.rewrite({ sessionId: 's4', seq: 1 }).done
-  assert.match(prompts[3], /原文最后在请读者做决定：把要决定的事和各选项的代价放在结论之后。/)
+  assert.match(prompts[3], /原文最后在请读者做决定：结论之后先写这件事；原文问读者的问题照原样列出，一个问题一条，不要改写成「补充……」这类陈述句/)
   const asked = JSON.stringify({ questions: [{ question: '修吗', options: [{ label: '修' }] }] })
   h.setLog([{ ...answer(), text: `${LONG}\n\n<ask_user_question>${asked}</ask_user_question>` }])
   await h.rewrite({ sessionId: 's5', seq: 1 }).done
   assert.match(prompts[4], /原文最后在请读者做决定/)
+
+  // Sectioned and asking: the decision is the first block, counted with the rest.
+  h.setLog([{ ...answer(), text: `${SECTIONED}\n\n你更倾向哪一个？` }])
+  await h.rewrite({ sessionId: 's6', seq: 1 }).done
+  assert.match(prompts[5], /合并成 2–4 块[\s\S]*原文最后在请读者做决定：结论之后的第一块就写这件事，算在块数里，标题用要决定的事本身；/)
   await h.cleanup()
 })
 
@@ -797,11 +802,13 @@ test('a 角色版 draft laid out wrong goes back once with what to fix', async (
 test('a 角色版 line that packs several points goes back to be split', async () => {
   const cases = [
     // Points strung together with semicolons in one item.
-    [`${BLOCKED}\n- 强缓存直接用本地副本；协商缓存问一次；都没有就回源`, /「强缓存直接用本地副本；协商缓存问…」这一条塞了 3 件事：拆成几条要点，一条只说一件事，不用分号串。/],
+    [`${BLOCKED}\n- 强缓存直接用本地副本；协商缓存问一次；都没有就回源`, /有 1 处把几件事塞进了一段或一条：「强缓存直接用本地副本；协商缓存问…」（3 件）。拆成要点，一条只说一件事，不用分号串；拆出来的要点留在原来那块里，不要为它们新加小标题。/],
     // A paragraph of four sentences.
-    [`${BLOCKED}\n\n一句。二句。三句。四句。`, /「一句。二句。三句。四句。」这一段塞了 4 件事/],
+    [`${BLOCKED}\n\n一句。二句。三句。四句。`, /「一句。二句。三句。四句。」（4 件）/],
     // An item of three sentences, with no semicolon at all.
-    [`${BLOCKED}\n- 一句。二句。三句。`, /「一句。二句。三句。」这一条塞了 3 件事/],
+    [`${BLOCKED}\n- 一句。二句。三句。`, /「一句。二句。三句。」（3 件）/],
+    // Many packed lines go back as one instruction that quotes a few of them.
+    [`${BLOCKED}${'\n- 甲。乙。丙。'.repeat(5)}`, /有 5 处把几件事塞进了一段或一条：(「甲。乙。丙。」（3 件）){3}等。/],
   ]
   for (const [draft, told] of cases) {
     const prompts = []
@@ -846,6 +853,37 @@ test('a 角色版 line that packs several points goes back to be split', async (
   const result = await h.rewrite({ sessionId: 's', seq: 1 }).done
   assert.equal(result.text, fine)
   assert.equal(h.state.calls, 1)
+  await h.cleanup()
+})
+
+test('the second pass runs at the lightest effort the model offers', async () => {
+  const efforts = []
+  const flat = '结论。\n\n- 一\n- 二'
+  const reasoning = { efforts: [{ id: 'high', name: '高' }, { id: 'low', name: '低' }, { id: 'max', name: '最高' }] }
+  let h = await host(async function* (request, call) {
+    efforts.push(request.reasoningEffort)
+    yield { type: 'text-delta', text: call === 1 ? flat : BLOCKED }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }, { config: { variant: 'roles' }, models: [{ id: 'm', reasoning }] })
+  h.setLog([{ ...answer(), text: SECTIONED }])
+  let result = await h.rewrite({ sessionId: 's', seq: 1 }).done
+  // The draft keeps the model's own effort; the repair edits it at the lightest.
+  assert.deepEqual(efforts, [undefined, 'low'])
+  assert.equal(result.trace.calls[1].effort, 'low')
+  assert.equal(result.text, BLOCKED)
+  await h.cleanup()
+
+  // A model that lists no efforts gets none: the call runs at its default.
+  efforts.length = 0
+  h = await host(async function* (request, call) {
+    efforts.push(request.reasoningEffort)
+    yield { type: 'text-delta', text: call === 1 ? flat : BLOCKED }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }, { config: { variant: 'roles' } })
+  h.setLog([{ ...answer(), text: SECTIONED }])
+  result = await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.deepEqual(efforts, [undefined, undefined])
+  assert.equal(result.trace.calls[1].effort, undefined)
   await h.cleanup()
 })
 
