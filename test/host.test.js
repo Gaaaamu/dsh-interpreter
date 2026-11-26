@@ -803,8 +803,10 @@ test('a 角色版 draft laid out wrong goes back once with what to fix', async (
 
 test('a 角色版 line that packs several points goes back to be split', async () => {
   const cases = [
-    // Points strung together with semicolons in one item.
-    [`${BLOCKED}\n- 强缓存直接用本地副本；协商缓存问一次；都没有就回源`, /有 1 处把几件事塞进了一段或一条：「强缓存直接用本地副本；协商缓存问…」（3 件）。拆成要点，一条只说一件事，不用分号串；拆出来的要点留在原来那块里，不要为它们新加小标题。/],
+    // Four points strung together with semicolons in one item: cut first, split only if all must stay.
+    [`${BLOCKED}\n- 强缓存直接用本地副本；协商缓存问一次；都没有就回源；回源也挂了就报错`, /有 1 处一段或一条里塞了好几件事：「强缓存直接用本地副本；协商缓存问…」（4 件）。每处只留最要紧的一两件；实在都要留，就拆成两三条，留在原来那块里，不要为它们新加小标题，整块仍不超过 5 条。/],
+    // Two semicolons in a paragraph are already a chain.
+    [`${BLOCKED}\n\n强缓存不问；协商缓存问一次；都没有就回源。`, /「强缓存不问；协商缓存问一次；都没…」（3 件）/],
     // A paragraph of four sentences.
     [`${BLOCKED}\n\n一句。二句。三句。四句。`, /「一句。二句。三句。四句。」（4 件）/],
     // An item of three sentences, with no semicolon at all.
@@ -813,7 +815,7 @@ test('a 角色版 line that packs several points goes back to be split', async (
     [`${BLOCKED}\n\n${'长'.repeat(70)}。${'句'.repeat(60)}。`, /「长{16}…」（132 字）/],
     [`${BLOCKED}\n- ${'项'.repeat(130)}`, /「项{16}…」（130 字）/],
     // Many packed lines go back as one instruction that quotes a few of them.
-    [`${BLOCKED}${'\n- 甲。乙。丙。'.repeat(5)}`, /有 5 处把几件事塞进了一段或一条：(「甲。乙。丙。」（3 件）){3}等。/],
+    [`${BLOCKED}${'\n- 甲。乙。丙。'.repeat(5)}`, /有 5 处一段或一条里塞了好几件事：(「甲。乙。丙。」（3 件）){3}等。/],
   ]
   for (const [draft, told] of cases) {
     const prompts = []
@@ -849,6 +851,7 @@ test('a 角色版 line that packs several points goes back to be split', async (
     '```\na; b; c\n```',
     '- 强缓存不问服务器；过期才问。',
     '#### 怎么验',
+    '- 延迟：LRU 纳秒级，没有 IO；Redis 同机房约 1ms；跨机房更慢。',
     '前者管存多久；后者管过期后怎么验。两者分开配。',
     '过期后，条件请求会同时带上两个验证器：',
     '- `If-None-Match`',
@@ -951,6 +954,17 @@ test('a 角色版 repair is kept only when its layout is no worse', async () => 
   assert.match(prompts[1], /速览一律用中文写/)
   assert.equal(result.text, BLOCKED)
   assert.equal(h.state.calls, 2)
+  await h.cleanup()
+
+  // A repair that shreds a few heavy lines into a heap counts every line too many, and loses.
+  prompts = []
+  const heavy = `结论。\n\n#### 常见坑\n${'- 甲。乙。丙。\n'.repeat(3)}\n#### 怎么配\n- 二`
+  const shredded = `结论。\n\n#### 常见坑\n${'- 甲。\n- 乙。\n- 丙。\n'.repeat(3)}\n#### 怎么配\n- 二`
+  h = await rolesHost([heavy, shredded], prompts)
+  h.setLog([{ ...answer(), text: SECTIONED }])
+  result = await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.match(result.trace.calls[1].problems.join(''), /「常见坑」这块有 9 条，太碎/)
+  assert.equal(result.text, heavy)
   await h.cleanup()
 
   // A repair that comes back with more faults than the draft loses to it.

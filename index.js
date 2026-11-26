@@ -351,8 +351,15 @@ const MAX_SENTENCES = 3
 /** Sentences one list item may hold: an item says one thing, a reason at most. */
 const MAX_ITEM_SENTENCES = 2
 
-/** Semicolons one line may hold: two mean several points strung into one. */
+/** Semicolons one paragraph may hold: two mean several points strung into one. */
 const MAX_SEMICOLONS = 1
+
+/**
+ * Semicolons one list item may hold. An item headed by a label often sets two
+ * or three sides against each other, 「延迟：LRU 纳秒级；Redis 约 1ms」, and
+ * that is the compact form a 速览 wants; split, it becomes a heap of fragments.
+ */
+const MAX_ITEM_SEMICOLONS = 2
 
 /** A heading's words without Markdown marks or a trailing colon, short enough to quote. */
 function plainTitle(raw) {
@@ -435,18 +442,28 @@ const MAX_QUOTED = 3
  * checked; content is the prompt's job.
  * @param draft - the model's 速览.
  * @param outline - what {@link outlineOf} saw of the answer.
- * @returns the instructions, and how many faults they stand for, each packed
- * line counted once, to weigh a repair against the draft it replaces.
+ * @returns the instructions, and how many faults they stand for, to weigh a
+ * repair against the draft it replaces: one for each packed line and each line
+ * a crowded block has too many, so a draft of a few heavy lines is not beaten
+ * by a repair that shredded them into dozens.
  */
 function layoutCheck(draft, outline) {
   const problems = layoutProblems(draft, outline)
+  let faults = problems.length
+  for (const block of crowdedBlocks(draft)) {
+    const which = block.title === null ? '要点' : `「${block.title}」这块`
+    problems.push(`${which}有 ${block.lines} 条，太碎：说同一件事的并成一条，次要的删掉，留到 ${block.limit} 条以内。`)
+    faults += block.lines - block.limit
+  }
   const packed = packedLines(draft)
   if (packed.length > 0) {
     const quoted = packed.slice(0, MAX_QUOTED).map((line) => `「${line.quote}」（${line.size}）`).join('')
     // No number of characters here: told one, the model counts them, at length.
-    problems.push(`有 ${packed.length} 处把几件事塞进了一段或一条：${quoted}${packed.length > MAX_QUOTED ? '等' : ''}。拆成要点，一条只说一件事，不用分号串；拆出来的要点留在原来那块里，不要为它们新加小标题。`)
+    // Cutting comes before splitting: split, every clause becomes an item of its own.
+    problems.push(`有 ${packed.length} 处一段或一条里塞了好几件事：${quoted}${packed.length > MAX_QUOTED ? '等' : ''}。每处只留最要紧的一两件；实在都要留，就拆成两三条，留在原来那块里，不要为它们新加小标题，整块仍不超过 ${MAX_BLOCK_LINES} 条。`)
+    faults += packed.length
   }
-  return { problems, faults: problems.length + Math.max(0, packed.length - 1) }
+  return { problems, faults }
 }
 
 /**
@@ -467,11 +484,6 @@ function layoutProblems(draft, outline) {
   if (!outline.blocks && titles.length > 0) problems.push('这条不用分块：去掉小标题，写成一句结论加几条要点。')
   const named = titles.filter((title) => CATEGORY_WORDS.has(title.replace(/\s/g, '')))
   if (named.length > 0) problems.push(`小标题${named.map((title) => `「${title}」`).join('')}是分类名，换成内容本身的词。`)
-  for (const block of crowdedBlocks(draft)) {
-    const which = block.title === null ? '要点' : `「${block.title}」这块`
-    const limit = block.title === null ? MAX_FLAT_LINES : MAX_BLOCK_LINES
-    problems.push(`${which}有 ${block.lines} 条，太碎：说同一件事的并成一条，次要的删掉，留到 ${limit} 条以内。`)
-  }
   for (const lead of leadIns(draft)) problems.push(`「${lead.label}」只是个标签：小标题已经说清时删掉这一行，直接给${lead.before}；没说清就换成一句交代${lead.before}讲什么的话。`)
   return problems
 }
@@ -530,9 +542,9 @@ function crowdedBlocks(draft) {
     blocks.at(-1).lines += 1
   }
   const headed = blocks.length > 1
-  return blocks.filter((block) => (block.title === null
-    ? !headed && block.lines > MAX_FLAT_LINES
-    : block.lines > MAX_BLOCK_LINES))
+  return blocks
+    .map((block) => ({ ...block, limit: block.title === null ? MAX_FLAT_LINES : MAX_BLOCK_LINES }))
+    .filter((block) => block.lines > block.limit && (block.title !== null || !headed))
 }
 
 /** Longest a line may be, in characters, and still be only a label for what follows. */
@@ -597,10 +609,12 @@ function packedLines(draft) {
     const body = trimmed.slice(marker === null ? 0 : marker[0].length)
     const words = body.replace(/`[^`]*`/g, 'x')
     const semicolons = (words.match(/[；;]/g) ?? []).length
-    const points = words.split(/[。！？；;!?]|\.(?=\s|$)/).filter((piece) => /[^\s*_>]/.test(piece)).length
+    const said = (pattern) => words.split(pattern).filter((piece) => /[^\s*_>]/.test(piece)).length
+    const sentences = said(/[。！？!?]|\.(?=\s|$)/)
+    const points = said(/[。！？；;!?]|\.(?=\s|$)/)
     const item = marker !== null
     const plain = body.replace(/[*_>`]/g, '').trim()
-    const chained = semicolons > MAX_SEMICOLONS || points > (item ? MAX_ITEM_SENTENCES : MAX_SENTENCES)
+    const chained = semicolons > (item ? MAX_ITEM_SEMICOLONS : MAX_SEMICOLONS) || sentences > (item ? MAX_ITEM_SENTENCES : MAX_SENTENCES)
     if (chained || plain.length > (item ? MAX_ITEM_CHARS : MAX_PARAGRAPH_CHARS)) {
       packed.push({ quote: plain.length > 16 ? `${plain.slice(0, 16)}…` : plain, size: chained ? `${points} 件` : `${plain.length} 字` })
     }
