@@ -125,7 +125,7 @@ const ROLE_PROMPT = `你把技术回答改写成「速览」。读者聪明但�
 - 第一句给结论，最好同时点出全篇的骨架（比如「A 管什么，B 管什么」），后面按这个骨架展开。这一句前面不加标题。
 - 分块时每块用 \`####\` 小标题，标题用内容本身的词（比如「怎么配」「常见坑」），不要用「结论」「待决」「参考」「边界」这类分类名。
 - 每块的文字不超过三行或三条；一条只说一件事，不用分号把几件事串在一起。
-- 表格只在读者要逐行对照时才用，最多 5 行；表格和代码块前面要有一句话说明它是什么。
+- 表格只在读者要逐行对照时才用，最多 5 行。小标题已经说清表格或代码块是什么时，直接给；没说清就在前面用一句完整的话交代，不要只写「常用组合：」这种标签。
 
 硬规则：
 1. 不加原文没有的信息，不改变结论。
@@ -442,7 +442,7 @@ function layoutProblems(draft, outline) {
   for (const line of packedLines(draft)) {
     problems.push(`「${line.quote}」这一${line.item ? '条' : '段'}塞了 ${line.points} 件事：拆成几条要点，一条只说一件事，不用分号串。`)
   }
-  for (const lead of leadIns(draft)) problems.push(`「${lead.label}」只是引子，没有内容：删掉这一行，直接给${lead.before}。`)
+  for (const lead of leadIns(draft)) problems.push(`「${lead.label}」只是个标签：小标题已经说清时删掉这一行，直接给${lead.before}；没说清就换成一句交代${lead.before}讲什么的话。`)
   return problems
 }
 

@@ -815,8 +815,8 @@ test('a 角色版 line that packs several points goes back to be split', async (
 
   // A line that only announces the table or list after it.
   const announced = [
-    [`${BLOCKED}\n\n常用组合：\n\n| 资源 | 响应头 |\n|---|---|\n| HTML | \`no-cache\` |`, /「常用组合：」只是引子，没有内容：删掉这一行，直接给表格。/],
-    [`${BLOCKED}\n\n**注意：**\n- 别缓存 HTML`, /「注意：」只是引子，没有内容：删掉这一行，直接给要点。/],
+    [`${BLOCKED}\n\n常用组合：\n\n| 资源 | 响应头 |\n|---|---|\n| HTML | \`no-cache\` |`, /「常用组合：」只是个标签：小标题已经说清时删掉这一行，直接给表格；没说清就换成一句交代表格讲什么的话。/],
+    [`${BLOCKED}\n\n**注意：**\n- 别缓存 HTML`, /「注意：」只是个标签：小标题已经说清时删掉这一行，直接给要点；/],
   ]
   for (const [draft, told] of announced) {
     const prompts = []
