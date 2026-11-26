@@ -787,6 +787,20 @@ window.__ModuleLoader__.load({
       return `${Math.round((count / 1000) * 10) / 10}k`;
     }
 
+    /**
+     * A call's tokens as the reader can add them up. DeepSeek Harness counts
+     * cached prompt tokens apart from the input and folds thinking into the
+     * output, so the prompt is shown whole with its cached part, and the output
+     * with its thinking part: input and output then make the total.
+     * @param usage - the Host's token accounting for one call or a pair.
+     */
+    function usageWords(usage) {
+      const cached = usage.cacheReadTokens ?? 0;
+      const prompt = usage.inputTokens + cached + (usage.cacheWriteTokens ?? 0);
+      const thinking = usage.reasoningTokens ?? 0;
+      return `输入 ${prompt}${cached > 0 ? `（缓存命中 ${cached}）` : ''} · 输出 ${usage.outputTokens}${thinking > 0 ? `（思考 ${thinking}）` : ''} · 合计 ${usage.totalTokens}`;
+    }
+
     /** What each call of a rewrite was for, in the reader's words. */
     const CALL_LABEL = { draft: '初稿', tighten: '再压一遍', repair: '按排版问题重写' };
 
@@ -845,8 +859,9 @@ window.__ModuleLoader__.load({
           return;
         }
         lines.push(`- 结果 ${call.chars} 字${call.over ? '，超过预算 1.5 倍' : ''}`);
-        lines.push(`- 代码查出的排版问题：${call.problems.length === 0 ? '无' : call.problems.join(' ')}`);
-        if (call.usage) lines.push(`- tokens：输入 ${call.usage.inputTokens} · 输出 ${call.usage.outputTokens} · 合计 ${call.usage.totalTokens}`);
+        if (call.problems.length <= 1) lines.push(`- 代码查出的排版问题：${call.problems[0] ?? '无'}`);
+        else lines.push(`- 代码查出 ${call.problems.length} 处排版问题：`, ...call.problems.map((problem) => `  - ${problem}`));
+        if (call.usage) lines.push(`- tokens：${usageWords(call.usage)}`);
       });
       lines.push('', `最后用的是${trace.kept === 2 ? '第二稿' : '初稿'}。`);
       if (typeof trace.firstDraft === 'string') lines.push('', '## 初稿全文', '', trace.firstDraft);
@@ -1493,7 +1508,7 @@ window.__ModuleLoader__.load({
         ? null
         : h('span', {
             style: COST,
-            title: `输入 ${usage.inputTokens} · 输出 ${usage.outputTokens} · 合计 ${usage.totalTokens} tokens${made === '' ? '' : `\n${made}`}`,
+            title: `${usageWords(usage)} tokens${made === '' ? '' : `\n${made}`}`,
           }, `${formatTokens(usage.totalTokens)} tokens`);
 
       /**

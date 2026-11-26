@@ -292,6 +292,14 @@ test('a rewrite says how it was made, in a line and in full', () => {
   }
   assert.equal(traceLine(repaired), '角色版 · 分块（原文 3 节） · 初稿 1500 字，超预算，1 处排版问题 · 按排版问题重写后 700 字，用第二稿')
   assert.match(traceText(repaired), /## 第 2 次调用：按排版问题重写[\s\S]*最后用的是第二稿。[\s\S]*## 初稿全文\n\n结论。/)
+  assert.match(traceText(repaired), /代码查出的排版问题：没有分块：…/)
+
+  // Several faults are listed one per line; tokens add up, with the cached and thinking parts inside.
+  const cached = { inputTokens: 7, cacheReadTokens: 2944, cacheWriteTokens: 0, outputTokens: 973, reasoningTokens: 400, totalTokens: 3924 }
+  const many = { ...repaired, calls: [{ ...repaired.calls[0], problems: ['一。', '二。'], usage: cached }, repaired.calls[1]] }
+  assert.match(traceText(many), /- 代码查出 2 处排版问题：\n  - 一。\n  - 二。/)
+  assert.match(traceText(many), /tokens：输入 2951（缓存命中 2944） · 输出 973（思考 400） · 合计 3924/)
+  assert.match(traceText(single), /tokens：输入 3000 · 输出 400 · 合计 3400/)
 
   const failed = { ...repaired, kept: 1, calls: [repaired.calls[0], { kind: 'tighten', instruction: 'x', failed: 'RATE: limited' }] }
   assert.match(traceLine(failed), /再压一遍失败，用初稿$/)

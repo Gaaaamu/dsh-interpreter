@@ -442,7 +442,40 @@ function layoutProblems(draft, outline) {
   for (const line of packedLines(draft)) {
     problems.push(`「${line.quote}」这一${line.item ? '条' : '段'}塞了 ${line.points} 件事：拆成几条要点，一条只说一件事，不用分号串。`)
   }
+  for (const lead of leadIns(draft)) problems.push(`「${lead.label}」只是引子，没有内容：删掉这一行，直接给${lead.before}。`)
   return problems
+}
+
+/** Longest a line may be, in characters, and still be only a label for what follows. */
+const MAX_LEAD_IN = 10
+
+/**
+ * Lines that only announce the table or list after them, like 「常用组合：」:
+ * short, ending in a colon, and saying nothing the table does not. A longer
+ * line ending in a colon says something of its own and stays.
+ * @param draft - the model's 速览.
+ * @returns each such line, with what it stands before.
+ */
+function leadIns(draft) {
+  const found = []
+  // Fenced code stays in as one marker line, so a YAML key above its list is not taken for a label.
+  const lines = []
+  let fenced = false
+  for (const raw of draft.split('\n')) {
+    const line = raw.trim()
+    if (/^(```|~~~)/.test(line)) {
+      if (!fenced) lines.push('```')
+      fenced = !fenced
+    } else if (!fenced && line !== '') lines.push(line)
+  }
+  lines.forEach((line, at) => {
+    const label = line.replace(/[*_]/g, '').trim()
+    if (!/[：:]$/.test(label) || label.length > MAX_LEAD_IN || /^(#|[-*+]\s|\d+[.)]\s|\|)/.test(line)) return
+    const next = lines[at + 1] ?? ''
+    if (next.startsWith('|')) found.push({ label, before: '表格' })
+    else if (/^([-*+]|\d+[.)])\s/.test(next)) found.push({ label, before: '要点' })
+  })
+  return found
 }
 
 /**
@@ -704,6 +737,8 @@ export function apply(ctx, config) {
       outputTokens: output,
       cacheReadTokens: cacheRead,
       cacheWriteTokens: cacheWrite,
+      // Part of the output already, not added to the total: the block says how much was thinking.
+      reasoningTokens: usage.reasoningTokens ?? 0,
       totalTokens: typeof usage.totalTokens === 'number' ? usage.totalTokens : input + output + cacheRead + cacheWrite,
     }
   }
@@ -717,6 +752,7 @@ export function apply(ctx, config) {
       outputTokens: a.outputTokens + b.outputTokens,
       cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens,
       cacheWriteTokens: a.cacheWriteTokens + b.cacheWriteTokens,
+      reasoningTokens: a.reasoningTokens + b.reasoningTokens,
       totalTokens: a.totalTokens + b.totalTokens,
     }
   }

@@ -813,7 +813,22 @@ test('a 角色版 line that packs several points goes back to be split', async (
     await h.cleanup()
   }
 
+  // A line that only announces the table or list after it.
+  const announced = [
+    [`${BLOCKED}\n\n常用组合：\n\n| 资源 | 响应头 |\n|---|---|\n| HTML | \`no-cache\` |`, /「常用组合：」只是引子，没有内容：删掉这一行，直接给表格。/],
+    [`${BLOCKED}\n\n**注意：**\n- 别缓存 HTML`, /「注意：」只是引子，没有内容：删掉这一行，直接给要点。/],
+  ]
+  for (const [draft, told] of announced) {
+    const prompts = []
+    const h = await rolesHost([draft, BLOCKED], prompts)
+    h.setLog([{ ...answer(), text: SECTIONED }])
+    await h.rewrite({ sessionId: 's', seq: 1 }).done
+    assert.match(prompts[1], told, draft)
+    await h.cleanup()
+  }
+
   // Semicolons inside code, a table row and a fenced block are not prose; one with a reason is fine.
+  // A colon line that says something, and a YAML key above its list, are not lead-ins.
   const prompts = []
   const fine = [
     BLOCKED,
@@ -822,6 +837,9 @@ test('a 角色版 line that packs several points goes back to be split', async (
     '```\na; b; c\n```',
     '- 强缓存不问服务器；过期才问。',
     '前者管存多久；后者管过期后怎么验。两者分开配。',
+    '过期后，条件请求会同时带上两个验证器：',
+    '- `If-None-Match`',
+    '```yaml\nitems:\n  - a\n```',
   ].join('\n')
   const h = await rolesHost([fine], prompts)
   h.setLog([{ ...answer(), text: SECTIONED }])
