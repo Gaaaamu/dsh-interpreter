@@ -306,6 +306,9 @@ test('a rewrite says how it was made, in a line and in full', () => {
   const failed = { ...repaired, kept: 1, calls: [repaired.calls[0], { kind: 'tighten', instruction: 'x', failed: 'RATE: limited' }] }
   assert.match(traceLine(failed), /再压一遍失败，用初稿$/)
   assert.equal(traceLine({ variant: 'baseline', outline: null, calls: [{ kind: 'draft', chars: 300, problems: [] }] }), '基准 · 不由代码定版式 · 初稿 300 字 · 1 次调用')
+  // An English answer's record speaks in words, as the model was told.
+  assert.equal(traceLine({ variant: 'baseline', outline: null, words: true, calls: [{ kind: 'draft', chars: 300, problems: [] }] }), '基准 · 不由代码定版式 · 初稿 100 个词 · 1 次调用')
+  assert.match(traceText({ variant: 'baseline', original: 3300, budget: 900, words: true, outline: null, calls: [] }), /原文 1100 个词，预算 300 个词/)
   // An older Host sends no record: nothing to say, nothing to copy.
   assert.equal(traceLine(undefined), '')
   assert.equal(traceText(undefined), '')

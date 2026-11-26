@@ -820,6 +820,16 @@ window.__ModuleLoader__.load({
       return seconds < 60 ? `已等 ${seconds} 秒` : `已等 ${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
     }
 
+    /**
+     * A size from the record in the unit the rewrite was told in: 字, or for
+     * an English answer words, at the Host's three half-width cells a word.
+     * @param size - a size in 字 as the Host counts them.
+     * @param trace - the record it comes from.
+     */
+    function sizeWords(size, trace) {
+      return trace.words === true ? `${Math.max(1, Math.round(size / 3))} 个词` : `${size} 字`;
+    }
+
     /** What each call of a rewrite was for, in the reader's words. */
     const CALL_LABEL = { draft: '初稿', tighten: '再压一遍', repair: '按排版问题重写' };
 
@@ -843,11 +853,11 @@ window.__ModuleLoader__.load({
       const [draft, second] = trace.calls;
       if (draft !== undefined) {
         const found = draft.problems?.length ?? 0;
-        parts.push(`初稿 ${draft.chars} 字${draft.over ? '，超预算' : ''}${found > 0 ? `，${found} 处排版问题` : ''}`);
+        parts.push(`初稿 ${sizeWords(draft.chars, trace)}${draft.over ? '，超预算' : ''}${found > 0 ? `，${found} 处排版问题` : ''}`);
       }
       if (second === undefined) parts.push('1 次调用');
       else if (second.failed !== undefined) parts.push(`${CALL_LABEL[second.kind] ?? second.kind}失败，用初稿`);
-      else parts.push(`${CALL_LABEL[second.kind] ?? second.kind}后 ${second.chars} 字，用${trace.kept === 2 ? '第二稿' : '初稿'}`);
+      else parts.push(`${CALL_LABEL[second.kind] ?? second.kind}后 ${sizeWords(second.chars, trace)}，用${trace.kept === 2 ? '第二稿' : '初稿'}`);
       return parts.join(' · ');
     }
 
@@ -864,7 +874,7 @@ window.__ModuleLoader__.load({
         '# 速览生成过程',
         '',
         `- 写法：${VARIANT_LABEL[trace.variant] ?? trace.variant}`,
-        `- 原文 ${trace.original} 字，预算 ${trace.budget} 字`,
+        `- 原文 ${sizeWords(trace.original, trace)}，预算 ${sizeWords(trace.budget, trace)}`,
         `- 版式：${layoutWords(trace)}`,
       ];
       const sections = trace.outline?.sections ?? [];
@@ -878,7 +888,7 @@ window.__ModuleLoader__.load({
           lines.push(`- 失败：${call.failed}`);
           return;
         }
-        lines.push(`- 结果 ${call.chars} 字${call.over ? '，超过预算 1.5 倍' : ''}`);
+        lines.push(`- 结果 ${sizeWords(call.chars, trace)}${call.over ? '，超过预算 1.5 倍' : ''}`);
         if (call.problems.length <= 1) lines.push(`- 代码查出的排版问题：${call.problems[0] ?? '无'}`);
         else lines.push(`- 代码查出 ${call.problems.length} 处排版问题：`, ...call.problems.map((problem) => `  - ${problem}`));
         if (call.usage) lines.push(`- tokens：${usageWords(call.usage)}`);

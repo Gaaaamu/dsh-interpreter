@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { apply, inject } from '../index.js'
 
-const LONG = 'x'.repeat(600)
+const LONG = '字'.repeat(600)
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** The fields index.js declares `.volatile()` in its Config. */
@@ -303,10 +303,30 @@ test('the target length is a share of the answer, never above the ceiling', asyn
   // 短回答按比例会算出小于 150 字的数字，预算有下限。
   prompts.length = 0
   const floor = await host(echo)
-  floor.setLog([{ ...answer(), text: 'x'.repeat(400) }])
+  floor.setLog([{ ...answer(), text: '字'.repeat(400) }])
   await floor.rewrite({ sessionId: 's', seq: 1 }).done
   assert.match(prompts[0], /控制在 150 字以内/)
   await floor.cleanup()
+})
+
+test('an English answer is measured by width and told its budget in words', async () => {
+  const prompts = []
+  const english = Array.from({ length: 1100 }, (_, at) => `word${at % 10}`).join(' ')
+  // A draft of about 330 words: within half again of a 300-word budget, so no second pass.
+  const draft = Array.from({ length: 330 }, () => 'word').join(' ')
+  const h = await host(async function* (request) {
+    prompts.push(request.messages[0].content[0].text)
+    yield { type: 'text-delta', text: draft }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  })
+  h.setLog([{ ...answer(), text: english }])
+  const result = await h.rewrite({ sessionId: 's', seq: 1 }).done
+  // 6599 characters are 3300 字 wide: the ceiling holds, and English is told in words.
+  assert.match(prompts[0], /---\n原文 1100 个词，速览请控制在 300 个词以内。$/)
+  assert.equal(result.trace.words, true)
+  assert.equal(result.trace.budget, 900)
+  assert.equal(h.state.calls, 1)
+  await h.cleanup()
 })
 
 test('a question written into the answer as raw markup reaches the model in words', async () => {
@@ -330,8 +350,9 @@ test('a question written into the answer as raw markup reaches the model in word
   const words = '原文末尾向读者提问：要我顺手修掉吗？\n- 修掉两处（推荐）：一次提交解决。\n- 都不修'
   assert.ok(prompts[0].startsWith(`${LONG}\n\n${words}\n\n---\n`))
   assert.doesNotMatch(prompts[0], /ask_user_question|"questions"/)
-  // The length the budget is taken from is the answer as the model reads it.
-  assert.match(prompts[0], new RegExp(`原文 ${LONG.length + 2 + words.length} 字`))
+  // The length the budget is taken from is the answer as the model reads it: 600 字, a question
+  // whose half-width dashes and spaces count half, and line breaks that count nothing.
+  assert.match(prompts[0], /原文 639 字/)
 
   // Markup that is not the tool's JSON loses only its tags.
   prompts.length = 0
@@ -349,7 +370,7 @@ test('a failed second pass keeps the first draft', async () => {
       yield { type: 'finish', reason: { kind: 'error', failure: { code: 'RATE', message: 'limited' } } }
       return
     }
-    yield { type: 'text-delta', text: 'y'.repeat(1000) }
+    yield { type: 'text-delta', text: '字'.repeat(1000) }
     yield { type: 'finish', reason: { kind: 'stop' } }
   })
   h.setLog([answer()])
@@ -699,7 +720,7 @@ test('the tightening pass speaks the way of cutting of the prompt in force', asy
   const prompts = []
   const long = async function* (request) {
     prompts.push(request.messages[0].content[0].text)
-    yield { type: 'text-delta', text: 'y'.repeat(1000) }
+    yield { type: 'text-delta', text: '字'.repeat(1000) }
     yield { type: 'finish', reason: { kind: 'stop' } }
   }
   const h = await host(long, { live: true })
@@ -715,9 +736,9 @@ test('the tightening pass speaks the way of cutting of the prompt in force', asy
 /** An answer in three sections under a title, with a `#` comment in a script that is not a heading. */
 const SECTIONED = [
   '# HTTP 缓存', '先说清楚两层缓存。',
-  '## 一、强缓存', 'a'.repeat(1000),
-  '## 二、协商缓存', 'b'.repeat(1000), '```sh', '# 不是标题', 'curl -I /', '```',
-  '## **三、怎么配：**', 'c'.repeat(1000),
+  '## 一、强缓存', '甲'.repeat(1000),
+  '## 二、协商缓存', '乙'.repeat(1000), '```sh', '# 不是标题', 'curl -I /', '```',
+  '## **三、怎么配：**', '丙'.repeat(1000),
 ].join('\n\n')
 
 /** A 速览 laid out the way 角色版 asks for a sectioned answer. */
@@ -753,7 +774,7 @@ test('角色版 is told the layout code read from the answer', async () => {
   assert.match(prompts[1], /这条速览不用分块：写成一句结论加几条要点，不用小标题。/)
 
   // Sections with no room for headings stay flat too: 600 characters leave a 210-character budget.
-  h.setLog([{ ...answer(), text: `## 一\n\n${'a'.repeat(200)}\n\n## 二\n\n${'b'.repeat(200)}\n\n## 三\n\n${'c'.repeat(200)}` }])
+  h.setLog([{ ...answer(), text: `## 一\n\n${'甲'.repeat(200)}\n\n## 二\n\n${'乙'.repeat(200)}\n\n## 三\n\n${'丙'.repeat(200)}` }])
   await h.rewrite({ sessionId: 's3', seq: 1 }).done
   assert.match(prompts[2], /这条速览不用分块/)
 
@@ -947,7 +968,7 @@ test('the second pass runs at the lightest effort the model offers', async () =>
 test('a 角色版 repair is kept only when its layout is no worse', async () => {
   // Over budget and laid out wrong: one pass fixes both, under the same language rule.
   let prompts = []
-  let h = await rolesHost([`结论。\n\n- ${'y'.repeat(1500)}`, BLOCKED], prompts, { language: 'zh' })
+  let h = await rolesHost([`结论。\n\n- ${'字'.repeat(1500)}`, BLOCKED], prompts, { language: 'zh' })
   h.setLog([{ ...answer(), text: SECTIONED }])
   let result = await h.rewrite({ sessionId: 's', seq: 1 }).done
   assert.match(prompts[1], /没有分块.*另外它还有 \d+ 字，超过 900 字的上限，再压一遍：保留开头的结论句和各块小标题/)
@@ -979,7 +1000,7 @@ test('a 角色版 repair is kept only when its layout is no worse', async () => 
   // A tightening pass that drops the headings loses to the longer draft that kept them.
   prompts = []
   // Four blocks of four short items, none of them a wall nor a heap: over budget, nothing else wrong.
-  const long = `结论。${['两层缓存', '怎么配', '怎么验', '常见坑'].map((title) => `\n\n#### ${title}${`\n- ${'y'.repeat(90)}`.repeat(4)}`).join('')}`
+  const long = `结论。${['两层缓存', '怎么配', '怎么验', '常见坑'].map((title) => `\n\n#### ${title}${`\n- ${'字'.repeat(90)}`.repeat(4)}`).join('')}`
   h = await rolesHost([long, '结论。'], prompts)
   h.setLog([{ ...answer(), text: SECTIONED }])
   result = await h.rewrite({ sessionId: 's', seq: 1 }).done

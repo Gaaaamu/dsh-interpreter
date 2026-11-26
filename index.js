@@ -333,6 +333,42 @@ function plainQuestions(text) {
   })
 }
 
+/** Characters that take a full cell: CJK ideographs and punctuation, kana, hangul, full-width forms. */
+const WIDE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/
+
+/**
+ * How long a text is, in 字: a wide character counts one, a letter, digit,
+ * symbol or space half, and line breaks nothing. Budgets and limits are set in
+ * 字, and counted in plain characters an English answer got half the room of a
+ * Chinese one: its 900-字 budget held about 150 words.
+ * @param text - any text.
+ */
+function sizeOf(text) {
+  let size = 0
+  for (const char of text) {
+    if (char === '\n' || char === '\r' || char === '\t') continue
+    size += WIDE.test(char) ? 1 : 0.5
+  }
+  return Math.round(size)
+}
+
+/** Half-width cells an English word takes with its space, on average. */
+const SIZE_PER_WORD = 3
+
+/** Whether a text is mostly in a script of half-width letters, and so is better measured in words. */
+function inWords(text) {
+  return sizeOf(text) < text.length * 0.6
+}
+
+/**
+ * A size said in the unit the model counts best: 字 for Chinese, words for English.
+ * @param size - a size from {@link sizeOf}.
+ * @param words - whether to say it in words.
+ */
+function amountOf(size, words) {
+  return words ? `${Math.max(1, Math.round(size / SIZE_PER_WORD))} 个词` : `${size} 字`
+}
+
 /** Fewest sections that make an answer worth laying out as headed blocks. */
 const MIN_SECTIONS = 3
 
@@ -571,7 +607,7 @@ function leadIns(draft) {
   }
   lines.forEach((line, at) => {
     const label = line.replace(/[*_]/g, '').trim()
-    if (!/[：:]$/.test(label) || label.length > MAX_LEAD_IN || /^(#|[-*+]\s|\d+[.)]\s|\|)/.test(line)) return
+    if (!/[：:]$/.test(label) || sizeOf(label) > MAX_LEAD_IN || /^(#|[-*+]\s|\d+[.)]\s|\|)/.test(line)) return
     const next = lines[at + 1] ?? ''
     if (next.startsWith('|')) found.push({ label, before: '表格' })
     else if (/^([-*+]|\d+[.)])\s/.test(next)) found.push({ label, before: '要点' })
@@ -597,6 +633,7 @@ const MAX_ITEM_CHARS = 120
  */
 function packedLines(draft) {
   const packed = []
+  const english = inWords(draft)
   let fenced = false
   for (const line of draft.split('\n')) {
     if (/^\s*(```|~~~)/.test(line)) {
@@ -615,8 +652,10 @@ function packedLines(draft) {
     const item = marker !== null
     const plain = body.replace(/[*_>`]/g, '').trim()
     const chained = semicolons > (item ? MAX_ITEM_SEMICOLONS : MAX_SEMICOLONS) || sentences > (item ? MAX_ITEM_SENTENCES : MAX_SENTENCES)
-    if (chained || plain.length > (item ? MAX_ITEM_CHARS : MAX_PARAGRAPH_CHARS)) {
-      packed.push({ quote: plain.length > 16 ? `${plain.slice(0, 16)}…` : plain, size: chained ? `${points} 件` : `${plain.length} 字` })
+    const size = sizeOf(plain)
+    if (chained || size > (item ? MAX_ITEM_CHARS : MAX_PARAGRAPH_CHARS)) {
+      const quote = english ? plain.split(/\s+/).slice(0, 5).join(' ') : plain.slice(0, 16)
+      packed.push({ quote: quote.length < plain.length ? `${quote}…` : plain, size: chained ? `${points} 件` : amountOf(size, english) })
     }
   }
   return packed
@@ -947,7 +986,7 @@ export function apply(ctx, config) {
    * The length one rewrite is asked to fit in: its share of the answer, held
    * above a floor and below the ceiling, so neither a tiny answer nor a huge
    * one decides how long a 速览 may be.
-   * @param length - the answer's length, in characters.
+   * @param length - the answer's size, in 字 (see {@link sizeOf}).
    * @param options - the settings in force for this call.
    */
   function budgetOf(length, options) {
@@ -985,7 +1024,11 @@ export function apply(ctx, config) {
    * @param signal - aborts with the HTTP request.
    */
   async function rewrite(text, sessionId, options, signal) {
-    const budget = budgetOf(text.length, options)
+    const size = sizeOf(text)
+    const budget = budgetOf(size, options)
+    // English is told in words: asked for 「900 字」, a model writing English cannot count it.
+    const words = inWords(text)
+    const said = (amount) => amountOf(amount, words)
     const language = languageRule(options)
     const variant = variantOf(options)
     const outline = variant === 'roles' ? outlineOf(text, budget) : undefined
@@ -993,28 +1036,31 @@ export function apply(ctx, config) {
     /**
      * What happened on the way, for the reader who wants to see it: the layout
      * code decided, each call and what code found in its draft, and which draft
-     * was kept. It travels with the result and is cached with it.
+     * was kept. It travels with the result and is cached with it. Sizes are in
+     * 字 as {@link sizeOf} counts them, said in words where `words` is set.
      */
     const trace = {
       variant,
-      original: text.length,
+      original: size,
       budget,
+      words,
       outline: outline === undefined ? null : outline,
       hint: layout,
       calls: [],
       kept: 1,
     }
     const check = (draft) => (outline === undefined ? { problems: [], faults: 0 } : layoutCheck(draft, outline))
-    const first = await ask(`${text}\n\n---\n原文 ${text.length} 字，速览请控制在 ${budget} 字以内。${layout}${language}`, sessionId, options, signal)
-    const over = first.text.length > budget * 1.5
+    const first = await ask(`${text}\n\n---\n原文 ${said(size)}，速览请控制在 ${said(budget)}以内。${layout}${language}`, sessionId, options, signal)
+    const firstSize = sizeOf(first.text)
+    const over = firstSize > budget * 1.5
     const { problems, faults } = check(first.text)
-    trace.calls.push({ kind: 'draft', chars: first.text.length, over, problems, usage: first.usage })
+    trace.calls.push({ kind: 'draft', chars: firstSize, over, problems, usage: first.usage })
     if (!over && problems.length === 0) return { ...first, trace }
     /** Over budget alone keeps the long-standing words; a layout fault says what to fix. */
     const kind = problems.length === 0 ? 'tighten' : 'repair'
     const instruction = kind === 'tighten'
-      ? `下面这段已经压过一遍，但还有 ${first.text.length} 字，超过 ${budget} 字的上限。${TIGHTEN[variant]}`
-      : `下面这段速览要再改一遍：${problems.join('')}${over ? `另外它还有 ${first.text.length} 字，超过 ${budget} 字的上限，${TIGHTEN[variant]}` : '除此之外内容不要增减。'}`
+      ? `下面这段已经压过一遍，但还有 ${said(firstSize)}，超过 ${said(budget)}的上限。${TIGHTEN[variant]}`
+      : `下面这段速览要再改一遍：${problems.join('')}${over ? `另外它还有 ${said(firstSize)}，超过 ${said(budget)}的上限，${TIGHTEN[variant]}` : '除此之外内容不要增减。'}`
     trace.firstDraft = first.text
     // The second pass edits a draft by instruction: it needs little thought, and
     // left at the model's own effort it has spent ten times the draft on it.
@@ -1030,8 +1076,9 @@ export function apply(ctx, config) {
     }
     /** Fewer layout faults wins, then the shorter; a tie keeps the first. */
     const left = check(second.text)
-    trace.calls.push({ kind, instruction, effort, chars: second.text.length, problems: left.problems, usage: second.usage })
-    const better = left.faults < faults || (left.faults === faults && second.text.length < first.text.length)
+    const secondSize = sizeOf(second.text)
+    trace.calls.push({ kind, instruction, effort, chars: secondSize, problems: left.problems, usage: second.usage })
+    const better = left.faults < faults || (left.faults === faults && secondSize < firstSize)
     trace.kept = better ? 2 : 1
     const best = better ? second : first
     return { text: best.text, usage: mergeUsage(first.usage, second.usage), trace }
