@@ -345,6 +345,15 @@ const MIN_BLOCK_BUDGET = 300
 /** The words 角色版 sorts content by: they guide the model and must never head a block. */
 const CATEGORY_WORDS = new Set(['结论', '待决', '操作', '参考', '证据', '过程', '边界'])
 
+/** Sentences one paragraph may hold before it reads as a wall and should be points. */
+const MAX_SENTENCES = 3
+
+/** Sentences one list item may hold: an item says one thing, a reason at most. */
+const MAX_ITEM_SENTENCES = 2
+
+/** Semicolons one line may hold: two mean several points strung into one. */
+const MAX_SEMICOLONS = 1
+
 /** A heading's words without Markdown marks or a trailing colon, short enough to quote. */
 function plainTitle(raw) {
   const title = raw.replace(/[*_`]/g, '').replace(/[：:]\s*$/, '').trim()
@@ -430,7 +439,43 @@ function layoutProblems(draft, outline) {
   if (!outline.blocks && titles.length > 0) problems.push('这条不用分块：去掉小标题，写成一句结论加几条要点。')
   const named = titles.filter((title) => CATEGORY_WORDS.has(title.replace(/\s/g, '')))
   if (named.length > 0) problems.push(`小标题${named.map((title) => `「${title}」`).join('')}是分类名，换成内容本身的词。`)
+  for (const line of packedLines(draft)) {
+    problems.push(`「${line.quote}」这一${line.item ? '条' : '段'}塞了 ${line.points} 件事：拆成几条要点，一条只说一件事，不用分号串。`)
+  }
   return problems
+}
+
+/**
+ * The prose lines of a draft that pack several points into one: a paragraph
+ * of more than {@link MAX_SENTENCES} sentences, a list item of more than
+ * {@link MAX_ITEM_SENTENCES}, or any line chaining points with semicolons.
+ * Code, headings and table rows are not prose and are skipped, and inline code
+ * is blanked first so a `;` inside a header value does not count.
+ * @param draft - the model's 速览.
+ * @returns each packed line, quoted short, with how many points it holds.
+ */
+function packedLines(draft) {
+  const packed = []
+  let fenced = false
+  for (const line of draft.split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) {
+      fenced = !fenced
+      continue
+    }
+    const trimmed = line.trim()
+    if (fenced || trimmed === '' || /^(#|\|)/.test(trimmed)) continue
+    const marker = /^([-*+]|\d+[.)])\s+/.exec(trimmed)
+    const body = trimmed.slice(marker === null ? 0 : marker[0].length)
+    const words = body.replace(/`[^`]*`/g, 'x')
+    const semicolons = (words.match(/[；;]/g) ?? []).length
+    const points = words.split(/[。！？；;!?]|\.(?=\s|$)/).filter((piece) => /[^\s*_>]/.test(piece)).length
+    const item = marker !== null
+    if (semicolons > MAX_SEMICOLONS || points > (item ? MAX_ITEM_SENTENCES : MAX_SENTENCES)) {
+      const plain = body.replace(/[*_>`]/g, '').trim()
+      packed.push({ quote: plain.length > 16 ? `${plain.slice(0, 16)}…` : plain, points, item })
+    }
+  }
+  return packed
 }
 
 /**

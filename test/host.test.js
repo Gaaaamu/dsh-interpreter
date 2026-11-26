@@ -794,6 +794,43 @@ test('a 角色版 draft laid out wrong goes back once with what to fix', async (
   }
 })
 
+test('a 角色版 line that packs several points goes back to be split', async () => {
+  const cases = [
+    // Points strung together with semicolons in one item.
+    [`${BLOCKED}\n- 强缓存直接用本地副本；协商缓存问一次；都没有就回源`, /「强缓存直接用本地副本；协商缓存问…」这一条塞了 3 件事：拆成几条要点，一条只说一件事，不用分号串。/],
+    // A paragraph of four sentences.
+    [`${BLOCKED}\n\n一句。二句。三句。四句。`, /「一句。二句。三句。四句。」这一段塞了 4 件事/],
+    // An item of three sentences, with no semicolon at all.
+    [`${BLOCKED}\n- 一句。二句。三句。`, /「一句。二句。三句。」这一条塞了 3 件事/],
+  ]
+  for (const [draft, told] of cases) {
+    const prompts = []
+    const h = await rolesHost([draft, BLOCKED], prompts)
+    h.setLog([{ ...answer(), text: SECTIONED }])
+    const result = await h.rewrite({ sessionId: 's', seq: 1 }).done
+    assert.match(prompts[1], told, draft)
+    assert.equal(result.text, BLOCKED)
+    await h.cleanup()
+  }
+
+  // Semicolons inside code, a table row and a fenced block are not prose; one with a reason is fine.
+  const prompts = []
+  const fine = [
+    BLOCKED,
+    '- 配 `Cache-Control: public; max-age=60; immutable`',
+    '| 资源 | `a; b; c` |',
+    '```\na; b; c\n```',
+    '- 强缓存不问服务器；过期才问。',
+    '前者管存多久；后者管过期后怎么验。两者分开配。',
+  ].join('\n')
+  const h = await rolesHost([fine], prompts)
+  h.setLog([{ ...answer(), text: SECTIONED }])
+  const result = await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.equal(result.text, fine)
+  assert.equal(h.state.calls, 1)
+  await h.cleanup()
+})
+
 test('a 角色版 repair is kept only when its layout is no worse', async () => {
   // Over budget and laid out wrong: one pass fixes both, under the same language rule.
   let prompts = []
