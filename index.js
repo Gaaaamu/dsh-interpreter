@@ -8,6 +8,8 @@
  * model's context and the original answer are never touched.
  */
 
+import { createHash } from 'node:crypto'
+
 /** Local route the Client module posts to. */
 const ROUTE_PATH = '/interpreter/rewrite'
 
@@ -26,6 +28,14 @@ const LENGTH_TIERS = ['normal', 'detailed']
 
 /** The languages a 速览 can be written in: the answer's own, or one fixed. */
 const LANGUAGES = ['auto', 'zh', 'en']
+
+/**
+ * The built-in prompts the block can switch between: 基准, the long-standing
+ * one, which a prompt of the reader's own replaces; and 角色版, which sorts the
+ * answer by what each part does for the reader. Each keeps its own cache, so
+ * the two can be compared on the same answer.
+ */
+const VARIANTS = ['baseline', 'roles']
 
 /** Largest request body accepted from the page, in bytes. A prompt save is the
  * biggest one by far: it carries the whole instruction the model reads. */
@@ -66,7 +76,7 @@ const LENGTHS = {
  */
 const REWRITE_FIELDS = ['temperature', 'ratio', 'capChars', 'minChars', 'maxChars', 'prompt']
 
-/** Default rewrite instruction; overridable through `config.prompt`. */
+/** Built-in 基准 instruction; a prompt of the reader's own in `config.prompt` replaces it. */
 const DEFAULT_PROMPT = `你把技术回答改写成「速览」。读者聪明但不熟悉这块，他只想知道：结论是什么、要不要动手、动手做什么、有什么坑。
 
 最重要的一条：更短。字数上限写在原文末尾，照着它来。删掉过程叙述、验证细节、自我复盘、重复和客套；留下结论、必要的操作步骤、必须保留的数字和命令。改完长度没明显变短，就是没做完，请继续压。
@@ -74,7 +84,7 @@ const DEFAULT_PROMPT = `你把技术回答改写成「速览」。读者聪明�
 硬规则：
 1. 不加原文没有的信息，不改变结论。
 2. 保留原文的语言：原文中文就写中文。
-3. 路径、命令、参数名、错误信息、数字原样照抄，不改写不翻译；路径、命令和文件名用反引号包起来。
+3. 路径、命令、参数名、错误信息、数字原样照抄，不改写不翻译；原文是 Markdown 链接的保留链接写法，其余路径、命令和文件名用反引号包起来。
 4. 形式跟着原文走：原文用表格就还是表格（保留表头，能删的行删掉），用列表、代码块、引用就照样用，不要把表格降级成文字。
 5. 不写一级标题，不写「以下是」这类开场白，直接给正文。
 6. 代码块只放要照抄的命令，能合并的合并。
@@ -84,9 +94,111 @@ const DEFAULT_PROMPT = `你把技术回答改写成「速览」。读者聪明�
 - 之后最多 5 条，每条一行，不超过 30 字，以动词或名词开头。
 - 段落之间空一行，一段只说一件事。
 - 关键结论和关键数字可以用 **加粗**，整篇最多 3 处。
-- 风险、限制、代价放在最后一条，不要为了顺口软化它。
+- 风险、限制、代价放在末尾，不要为了顺口软化它。
 
 输出纯 Markdown 正文。`
+
+/**
+ * Built-in 角色版 instruction. Two separate questions: what to keep, judged by
+ * what each part does for the reader (a table of passed checks folds into a
+ * sentence, the core idea of an explanation stays, its fine print goes), and
+ * how to lay it out, as a few blocks hung off the opening sentence and named in
+ * the answer's own words. The categories stay in the model's head: they are not
+ * headings. Whether there are blocks, and in what order, is not the model's
+ * call: code scans the answer and says so at the end of the message (see
+ * {@link layoutHint}), then checks the draft (see {@link layoutProblems}).
+ * Not editable: the reader's own prompt replaces 基准 only.
+ */
+const ROLE_PROMPT = `你把技术回答改写成「速览」。读者聪明但很累，只想花半分钟弄明白：结论是什么、要不要做什么、要当心什么。看完速览，他不必回头读原文。字数上限写在原文末尾，照着它来，宁可更短。
+
+取舍（只在心里判断，这些说法不要写进速览）：
+- 结论和需要读者决定的事：必须留，结论放最前。原文给了选项和代价，一起留。
+- 要照着做的步骤和命令：原样留，按顺序执行的步骤不能删。同类配置罗列很多时，只留最常用的几项。
+- 讲原理的内容：只留理解结论必需的核心概念；细节、公式、规范出处、边角情况删掉。
+- 验证、测试、核对记录：收成一句，说清查了多大范围、结果如何、有什么例外；意外发现单独留一句。
+- 过程、试错、自我复盘、重复的话：删掉。
+- 风险和坑：只留最要紧的两三条，不要为了顺口软化。
+- 其他罗列很多项的内容（表格行、要点）：只挑最关键的几项，不求全。
+
+排法：
+- 要不要分块、分几块、按什么顺序，消息末尾的版式说明已经定好，照着来，不要自己另排。
+- 第一句给结论，最好同时点出全篇的骨架（比如「A 管什么，B 管什么」），后面按这个骨架展开。这一句前面不加标题。
+- 分块时每块用 \`####\` 小标题，标题用内容本身的词（比如「怎么配」「常见坑」），不要用「结论」「待决」「参考」「边界」这类分类名。
+- 每块的文字不超过三行或三条；一条只说一件事，不用分号把几件事串在一起。
+- 表格只在读者要逐行对照时才用，最多 5 行；表格和代码块前面要有一句话说明它是什么。
+
+硬规则：
+1. 不加原文没有的信息，不改变结论。
+2. 保留原文的语言：原文中文就写中文。
+3. 路径、命令、参数名、错误信息、数字原样照抄，不改写不翻译；原文是 Markdown 链接的保留链接写法，其余路径、命令和文件名用反引号包起来。
+4. 不写一级标题，不写「以下是」这类开场白，直接给正文。
+5. 加粗只给结论和需要读者决定的事，整篇最多 2 处。
+
+输出纯 Markdown 正文。`
+
+/** Each built-in prompt by the variant that names it. */
+const BUILT_IN_PROMPTS = { baseline: DEFAULT_PROMPT, roles: ROLE_PROMPT }
+
+/**
+ * What the tightening pass asks for, per variant. 基准 keeps its long-standing
+ * words; 角色版 cuts inside its blocks and keeps their headings, so a second
+ * pass neither drops the decision the first one kept nor flattens the layout.
+ */
+const TIGHTEN = {
+  baseline: '再压一遍：只留结论、必要步骤和风险，关键数字和命令不能丢。',
+  roles: '再压一遍：保留开头的结论句和各块小标题，每块只留最关键的一两条，删掉细节和次要罗列；需要读者决定的事、关键数字和命令不能丢。',
+}
+
+/** A prompt as compared: line endings unified and the ends trimmed, as a YAML round trip may leave them. */
+function normalizedPrompt(text) {
+  return text.replace(/\r\n?/g, '\n').trim()
+}
+
+/** A prompt's fingerprint, so a built-in text can be recognised without keeping old copies of it. */
+function promptPrint(text) {
+  return createHash('sha256').update(normalizedPrompt(text)).digest('hex')
+}
+
+/**
+ * Fingerprints of the built-in 基准 texts earlier releases shipped. Up to 0.2.1
+ * the settings page saved the prompt along with every other row, so a profile
+ * may hold a verbatim copy of one of these; that copy is the built-in prompt of
+ * its day, not the reader's own, and it must not keep a newer built-in out.
+ * When DEFAULT_PROMPT changes, add the outgoing text's fingerprint here.
+ */
+const PAST_BUILT_IN_PRINTS = new Set([
+  'bffdd58dc3b6adceb9aaa8881300d677999a51905f19cbe02af8edbb7a7298cc', // 0.1.0
+  '3dda54738e4b92ca7dc258337bb724d262dbd5f381a56892eaf93e5f1d1b3221',
+  'b225761516ae819d120112552ae620185e21803542c0bcac03b1306a532b37eb', // 0.1.1 – 0.2.1
+])
+
+/** Fingerprints of every text that is a built-in prompt, current or past. */
+const BUILT_IN_PRINTS = new Set([...PAST_BUILT_IN_PRINTS, ...Object.values(BUILT_IN_PROMPTS).map(promptPrint)])
+
+/**
+ * Whether a saved prompt is the reader's own: present, and not a copy of any
+ * built-in prompt, current or past.
+ * @param text - the row's `prompt`, whatever it holds.
+ */
+function isOwnPrompt(text) {
+  return typeof text === 'string' && text.trim() !== '' && !BUILT_IN_PRINTS.has(promptPrint(text))
+}
+
+/** The variant in force, standing in with 基准 for anything it does not know. */
+function variantOf(options) {
+  return VARIANTS.includes(options.variant) ? options.variant : 'baseline'
+}
+
+/**
+ * The instruction a rewrite runs with: the reader's own prompt where they wrote
+ * one and 基准 is in force, otherwise the selected built-in.
+ * @param options - the settings in force for this call.
+ */
+function promptOf(options) {
+  const variant = variantOf(options)
+  if (variant === 'baseline' && isOwnPrompt(options.prompt)) return options.prompt
+  return BUILT_IN_PROMPTS[variant]
+}
 
 /** Behaviour every field falls back to. */
 const DEFAULTS = {
@@ -106,6 +218,8 @@ const DEFAULTS = {
   /** 跟随回答 / 固定中文 / 固定英文. 'auto' keeps prompt rule 2 (the answer's own
    * language); a fixed one is said in the user Turn, after that rule. */
   language: 'auto',
+  /** 基准 / 角色版, switched in the block; each keeps its own cache. */
+  variant: 'baseline',
   /** When a new answer gets a 速览: 'global' every answer, 'session' the listed
    * Sessions only, 'manual' nothing until the reader asks. Manual is the
    * default so that installing the bundle spends nothing on its own. */
@@ -148,6 +262,8 @@ export const Config = z === undefined ? undefined : z.object({
   length: z.string().volatile(),
   /** Same, for the language the 速览 is written in. */
   language: z.string().volatile(),
+  /** Same, for the built-in prompt. */
+  variant: z.string().volatile(),
   /** When automation was last switched on or widened, in epoch milliseconds. */
   autoSince: z.number().volatile(),
   temperature: z.number().volatile(),
@@ -178,13 +294,154 @@ function isLive(value) {
 }
 
 /**
+ * A question the working model meant to put through DSH's `ask_user_question`
+ * tool but wrote into its answer as text. DSH renders only the tool call, so
+ * the reader sees the raw markup, and the rewrite would count and read JSON.
+ */
+const RAW_QUESTION = /<ask_user_question\b[^>]*>([\s\S]*?)<\/ask_user_question>/g
+
+/** How a raw question reads once said in words; the outline scan looks for it. */
+const QUESTION_LEAD = '原文末尾向读者提问：'
+
+/**
+ * The answer with every raw question block said in words: the question, then
+ * one line per option with its tradeoff, so the rewrite keeps what the reader
+ * is being asked to decide without the markup. A block that is not the tool's
+ * JSON keeps its inner text and loses only the tags.
+ * @param text - the answer's text.
+ */
+function plainQuestions(text) {
+  return text.replace(RAW_QUESTION, (_, body) => {
+    const inner = body.trim()
+    let parsed
+    try {
+      parsed = JSON.parse(inner)
+    } catch {
+      return inner
+    }
+    const lines = []
+    for (const item of Array.isArray(parsed?.questions) ? parsed.questions : []) {
+      if (typeof item?.question !== 'string' || item.question.trim() === '') continue
+      lines.push(`${QUESTION_LEAD}${item.question.trim()}`)
+      for (const option of Array.isArray(item.options) ? item.options : []) {
+        if (typeof option?.label !== 'string' || option.label.trim() === '') continue
+        const why = typeof option.description === 'string' ? option.description.trim() : ''
+        lines.push(why === '' ? `- ${option.label.trim()}` : `- ${option.label.trim()}：${why}`)
+      }
+    }
+    return lines.length > 0 ? lines.join('\n') : inner
+  })
+}
+
+/** Fewest sections that make an answer worth laying out as headed blocks. */
+const MIN_SECTIONS = 3
+
+/** Most headed blocks a 速览 may have. */
+const MAX_BLOCKS = 4
+
+/** Below this budget, in characters, headings would eat the room the content needs. */
+const MIN_BLOCK_BUDGET = 300
+
+/** The words 角色版 sorts content by: they guide the model and must never head a block. */
+const CATEGORY_WORDS = new Set(['结论', '待决', '操作', '参考', '证据', '过程', '边界'])
+
+/** A heading's words without Markdown marks or a trailing colon, short enough to quote. */
+function plainTitle(raw) {
+  const title = raw.replace(/[*_`]/g, '').replace(/[：:]\s*$/, '').trim()
+  return title.length > 24 ? `${title.slice(0, 24)}…` : title
+}
+
+/**
+ * The headings of a Markdown text, in order, skipping fenced code so a `#`
+ * comment in a script is not taken for one.
+ * @param text - Markdown.
+ * @returns each heading's level and plain title.
+ */
+function headingsOf(text) {
+  const headings = []
+  let fenced = false
+  for (const line of text.split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) {
+      fenced = !fenced
+      continue
+    }
+    if (fenced) continue
+    const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line)
+    if (match !== null) headings.push({ level: match[1].length, title: plainTitle(match[2]) })
+  }
+  return headings
+}
+
+/**
+ * What a local scan sees of an answer's shape, with no model asked: the
+ * sections it is split into, and whether it ends by asking the reader to
+ * decide something. The sections are the highest heading level that occurs
+ * more than once, so a lone title above them is not one, and neither are the
+ * subsections beneath them. Blocks are worth it only with enough sections and
+ * enough room for their headings.
+ * @param text - the answer, raw questions already said in words.
+ * @param budget - the 速览's length limit, in characters.
+ */
+function outlineOf(text, budget) {
+  const headings = headingsOf(text)
+  let sections = []
+  for (let level = 1; level <= 6; level += 1) {
+    const atLevel = headings.filter((heading) => heading.level === level)
+    if (atLevel.length >= 2) {
+      sections = atLevel.map((heading) => heading.title)
+      break
+    }
+  }
+  const prose = text.replace(/```[\s\S]*?```/g, '').trim()
+  const asks = prose.includes(QUESTION_LEAD) || /[?？]$/.test(prose)
+  return { sections, blocks: sections.length >= MIN_SECTIONS && budget >= MIN_BLOCK_BUDGET, asks }
+}
+
+/**
+ * The layout the scan decided, said to the model after the budget: headed
+ * blocks in the answer's own order where it has sections, one sentence and a
+ * few points where it has not, and the pending decision first where it ends
+ * by asking. The model is told the shape instead of judging it.
+ * @param outline - what {@link outlineOf} saw.
+ */
+function layoutHint(outline) {
+  const said = outline.blocks
+    ? `原文分 ${outline.sections.length} 节：${outline.sections.map((title) => `「${title}」`).join('、')}。速览按这个顺序合并成 2–${MAX_BLOCKS} 块，每块用 #### 小标题，标题用内容本身的词。`
+    : '这条速览不用分块：写成一句结论加几条要点，不用小标题。'
+  return outline.asks ? `${said}原文最后在请读者做决定：把要决定的事和各选项的代价放在结论之后。` : said
+}
+
+/**
+ * What is wrong with a draft's layout, checked by code against the layout the
+ * scan decided: each entry is an instruction for the repair pass, and none
+ * means the draft stands. Only layout is checked; content is the prompt's job.
+ * @param draft - the model's 速览.
+ * @param outline - what {@link outlineOf} saw of the answer.
+ */
+function layoutProblems(draft, outline) {
+  const problems = []
+  const titles = headingsOf(draft).map((heading) => heading.title)
+  const opening = draft.split('\n').find((line) => line.trim() !== '') ?? ''
+  if (/^\s*#/.test(opening)) problems.push('开头先写一句结论，小标题放在它后面。')
+  if (outline.blocks && titles.length === 0) {
+    problems.push(`没有分块：按${outline.sections.map((title) => `「${title}」`).join('、')}的顺序合并成 2–${MAX_BLOCKS} 块，每块加 #### 小标题。`)
+  }
+  if (outline.blocks && titles.length > MAX_BLOCKS) problems.push(`分了 ${titles.length} 块，太多：合并成不超过 ${MAX_BLOCKS} 块。`)
+  if (!outline.blocks && titles.length > 0) problems.push('这条不用分块：去掉小标题，写成一句结论加几条要点。')
+  const named = titles.filter((title) => CATEGORY_WORDS.has(title.replace(/\s/g, '')))
+  if (named.length > 0) problems.push(`小标题${named.map((title) => `「${title}」`).join('')}是分类名，换成内容本身的词。`)
+  return problems
+}
+
+/**
  * Last text block set of the assistant answer committed in the Turn that closes
  * at `upto`. The search never leaves that Turn: a Turn that answered no text
  * must not borrow the answer of the one before it.
  * @param session - live session owning the Turn.
  * @param upto - the Turn's closing sequence.
- * @returns the answer text, when it was committed and whether the reader
- *   stopped it, or undefined when the Turn answered no text.
+ * @returns the answer text, with raw question markup said in words, when it
+ *   was committed and whether the reader stopped it, or undefined when the
+ *   Turn answered no text.
  */
 function answerAt(session, upto) {
   const nodes = session.surface.nodes
@@ -205,10 +462,10 @@ function answerAt(session, upto) {
     const message = session.deriveEventMessage(event)
     const content = message?.content
     if (!Array.isArray(content)) continue
-    const text = content
+    const text = plainQuestions(content
       .filter((block) => block.type === 'text')
       .map((block) => block.text)
-      .join('\n\n')
+      .join('\n\n'))
       .trim()
     if (text !== '') return { text, time: event.time, interrupted: event.data?.interrupted === true }
   }
@@ -292,7 +549,8 @@ export function apply(ctx, config) {
       capChars: number(options.capChars, DEFAULTS.capChars),
       minChars: number(options.minChars, DEFAULTS.minChars),
       maxChars: number(options.maxChars, DEFAULTS.maxChars),
-      prompt: typeof options.prompt === 'string' && options.prompt.trim() !== '' ? options.prompt : DEFAULTS.prompt,
+      // A saved copy of an older built-in shows as today's: it was never the reader's own.
+      prompt: isOwnPrompt(options.prompt) ? options.prompt : DEFAULT_PROMPT,
       dailyTokenCap: number(options.dailyTokenCap, DEFAULTS.dailyTokenCap),
     }
   }
@@ -422,7 +680,7 @@ export function apply(ctx, config) {
     const stream = ctx.llm.stream({
       provider: options.provider,
       model: options.model,
-      system: options.prompt,
+      system: promptOf(options),
       messages: [{ role: 'user', content: [{ type: 'text', text: instruction }] }],
       temperature: options.temperature,
       sessionId,
@@ -490,7 +748,11 @@ export function apply(ctx, config) {
   }
 
   /**
-   * Ask the rewrite model for one readable version.
+   * Ask the rewrite model for one readable version, and at most once more when
+   * code finds the draft wrong. 基准 is checked for length only. 角色版 is also
+   * told the layout a local scan of the answer decided, and its draft is
+   * checked against that layout; a draft that is over budget or laid out wrong
+   * goes back once with what to fix.
    * @param text - the committed answer.
    * @param sessionId - routes the call; some providers reject calls without one.
    * @param options - the settings in force for this call.
@@ -499,21 +761,31 @@ export function apply(ctx, config) {
   async function rewrite(text, sessionId, options, signal) {
     const budget = budgetOf(text.length, options)
     const language = languageRule(options)
-    const first = await ask(`${text}\n\n---\n原文 ${text.length} 字，速览请控制在 ${budget} 字以内。${language}`, sessionId, options, signal)
-    if (first.text.length <= budget * 1.5) return first
-    /** The model ignored the budget: say it once more with the draft in hand. */
+    const variant = variantOf(options)
+    const outline = variant === 'roles' ? outlineOf(text, budget) : undefined
+    const layout = outline === undefined ? '' : layoutHint(outline)
+    const first = await ask(`${text}\n\n---\n原文 ${text.length} 字，速览请控制在 ${budget} 字以内。${layout}${language}`, sessionId, options, signal)
+    const over = first.text.length > budget * 1.5
+    const problems = outline === undefined ? [] : layoutProblems(first.text, outline)
+    if (!over && problems.length === 0) return first
+    /** Over budget alone keeps the long-standing words; a layout fault says what to fix. */
+    const instruction = problems.length === 0
+      ? `下面这段已经压过一遍，但还有 ${first.text.length} 字，超过 ${budget} 字的上限。${TIGHTEN[variant]}`
+      : `下面这段速览要再改一遍：${problems.join('')}${over ? `另外它还有 ${first.text.length} 字，超过 ${budget} 字的上限，${TIGHTEN[variant]}` : '内容不要增减。'}`
     let second
     try {
-      second = await ask(
-        `下面这段已经压过一遍，但还有 ${first.text.length} 字，超过 ${budget} 字的上限。再压一遍：只留结论、必要步骤和风险，关键数字和命令不能丢。${language}\n\n${first.text}`,
-        sessionId, options, signal,
-      )
+      second = await ask(`${instruction}${language}\n\n${first.text}`, sessionId, options, signal)
     } catch {
-      // The first draft is already paid for and usable: a failed tightening
-      // pass must not throw it away.
+      // The first draft is already paid for and usable: a failed second pass
+      // must not throw it away.
       return first
     }
-    const best = second.text.length < first.text.length ? second : first
+    /** Fewer layout faults wins, then the shorter; a tie keeps the first. */
+    const faults = (draft) => (outline === undefined ? 0 : layoutProblems(draft.text, outline).length)
+    const secondFaults = faults(second)
+    const firstFaults = problems.length
+    const better = secondFaults < firstFaults || (secondFaults === firstFaults && second.text.length < first.text.length)
+    const best = better ? second : first
     return { text: best.text, usage: mergeUsage(first.usage, second.usage) }
   }
 
@@ -536,10 +808,11 @@ export function apply(ctx, config) {
   async function resolve(sessionId, seq, force, auto, signal) {
     /** The settings this request runs with, taken once so the key and the call agree. */
     const options = settings()
-    // The model, the length tier and the language are part of the key: after a
-    // live switch, work done with the old ones is neither served nor joined. The
-    // revision covers the settings page's own rows the same way.
-    const key = `${options.provider}/${options.model}/${options.length}/${options.language}@${revision}:${sessionId}:${seq}`
+    // The model, the length tier, the language and the built-in prompt are part of
+    // the key: after a live switch, work done with the old ones is neither served
+    // nor joined, and switching back finds its own. The revision covers the
+    // settings page's own rows the same way.
+    const key = `${options.provider}/${options.model}/${options.length}/${options.language}/${variantOf(options)}@${revision}:${sessionId}:${seq}`
     if (force !== true && cache.has(key)) return cache.get(key)
     const joined = running.get(key)
     // Work everyone has already walked away from is being torn down; start afresh.
@@ -690,6 +963,10 @@ export function apply(ctx, config) {
       }
       kept = { ...current, ...next }
       if (list !== undefined) kept.sessions = list
+      // Only a prompt of the reader's own belongs in the row. A copy of a built-in,
+      // sent back by the settings page or left by an older release, would pin
+      // that text and keep every later built-in from reaching this profile.
+      if ('prompt' in kept && !isOwnPrompt(kept.prompt)) delete kept.prompt
       // Turning automation on, or widening it to another Session, starts its
       // clock now: only answers committed from here on are rewritten unasked.
       // Decided against the row as it is now, so back-to-back saves agree.
@@ -746,12 +1023,17 @@ export function apply(ctx, config) {
           sessions: Array.isArray(options.sessions) ? options.sessions.filter((id) => typeof id === 'string') : [],
           length: LENGTH_TIERS.includes(options.length) ? options.length : DEFAULTS.length,
           language: LANGUAGES.includes(options.language) ? options.language : DEFAULTS.language,
+          variant: variantOf(options),
           live,
           /** What the guard has to work with: spent today, and the ceiling. */
           tokensToday: Math.round(spentToday()),
           tokenCap: dailyCap(options),
-          /** Built-in prompt so the settings dialog can offer one-click restore. */
+          /** Built-in 基准 prompt so the settings dialog can offer one-click restore. */
           defaultPrompt: DEFAULT_PROMPT,
+          /** Every built-in prompt, so the dialog can show the one in force. */
+          builtInPrompts: BUILT_IN_PROMPTS,
+          /** Whether 基准 runs the reader's own prompt rather than the built-in. */
+          ownPrompt: isOwnPrompt(options.prompt),
           /** The rows the settings page edits. */
           settings: formOf(options),
         })
@@ -809,6 +1091,13 @@ export function apply(ctx, config) {
           return
         }
         next.language = body.language
+      }
+      if (body?.variant !== undefined) {
+        if (!VARIANTS.includes(body.variant)) {
+          reply(res, 400, { status: 'error', message: `variant must be one of ${VARIANTS.join(', ')}` })
+          return
+        }
+        next.variant = body.variant
       }
       /** Each settings-page field, and what the Host accepts for it. */
       const fields = {
@@ -875,6 +1164,8 @@ export function apply(ctx, config) {
         sessions: Array.isArray(after.sessions) ? after.sessions : [],
         length: LENGTH_TIERS.includes(after.length) ? after.length : DEFAULTS.length,
         language: LANGUAGES.includes(after.language) ? after.language : DEFAULTS.language,
+        variant: variantOf(after),
+        ownPrompt: isOwnPrompt(after.prompt),
         settings: formOf({ ...DEFAULTS, ...after }),
       })
     },

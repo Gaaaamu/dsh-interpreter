@@ -12,7 +12,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** The fields index.js declares `.volatile()` in its Config. */
 const LIVE_FIELDS = [
-  'provider', 'model', 'mode', 'sessions', 'length', 'language', 'autoSince',
+  'provider', 'model', 'mode', 'sessions', 'length', 'language', 'variant', 'autoSince',
   'temperature', 'ratio', 'capChars', 'minChars', 'maxChars', 'prompt', 'dailyTokenCap',
 ]
 
@@ -169,7 +169,7 @@ async function host(model, options = {}) {
   const rewrite = (body) => send('/interpreter/rewrite', body)
   const config = (body) => send('/interpreter/config', body)
   const probe = (body) => send('/interpreter/probe', body)
-  return { state, routes, setLog, send, rewrite, config, probe, cleanup: async () => {} }
+  return { state, routes, row, setLog, send, rewrite, config, probe, cleanup: async () => {} }
 }
 
 /** A model that answers `text`, optionally after `delay` ms, honouring aborts. */
@@ -305,6 +305,38 @@ test('the target length is a share of the answer, never above the ceiling', asyn
   await floor.rewrite({ sessionId: 's', seq: 1 }).done
   assert.match(prompts[0], /控制在 150 字以内/)
   await floor.cleanup()
+})
+
+test('a question written into the answer as raw markup reaches the model in words', async () => {
+  const prompts = []
+  const echo = async function* (request) {
+    prompts.push(request.messages[0].content[0].text)
+    yield { type: 'text-delta', text: '短' }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }
+  const asked = JSON.stringify({
+    questions: [{
+      id: 'next',
+      header: '下一步',
+      question: '要我顺手修掉吗？',
+      options: [{ label: '修掉两处（推荐）', description: '一次提交解决。' }, { label: '都不修' }],
+    }],
+  })
+  const h = await host(echo)
+  h.setLog([{ ...answer(), text: `${LONG}\n\n<ask_user_question type="text">\n${asked}\n</ask_user_question>` }])
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  const words = '原文末尾向读者提问：要我顺手修掉吗？\n- 修掉两处（推荐）：一次提交解决。\n- 都不修'
+  assert.ok(prompts[0].startsWith(`${LONG}\n\n${words}\n\n---\n`))
+  assert.doesNotMatch(prompts[0], /ask_user_question|"questions"/)
+  // The length the budget is taken from is the answer as the model reads it.
+  assert.match(prompts[0], new RegExp(`原文 ${LONG.length + 2 + words.length} 字`))
+
+  // Markup that is not the tool's JSON loses only its tags.
+  prompts.length = 0
+  h.setLog([{ ...answer(), text: `${LONG}\n\n<ask_user_question>继续吗？</ask_user_question>` }])
+  await h.rewrite({ sessionId: 's2', seq: 1 }).done
+  assert.ok(prompts[0].startsWith(`${LONG}\n\n继续吗？\n\n---\n`))
+  await h.cleanup()
 })
 
 test('a failed second pass keeps the first draft', async () => {
@@ -564,6 +596,248 @@ test('the gate reports every row the settings page edits', async () => {
   })
   assert.match(gate.settings.prompt, /速览/)
   assert.equal(gate.defaultPrompt, gate.settings.prompt)
+  assert.equal(gate.variant, 'baseline')
+  assert.equal(gate.ownPrompt, false)
+  assert.equal(gate.builtInPrompts.baseline, gate.defaultPrompt)
+  assert.match(gate.builtInPrompts.roles, /这些说法不要写进速览/)
+  await h.cleanup()
+})
+
+/** What the 0.1.1 – 0.2.1 releases shipped as the built-in prompt, rebuilt from today's. */
+const releasedPrompt = (current) => current
+  .replace('原文是 Markdown 链接的保留链接写法，其余路径、命令和文件名用反引号包起来', '路径、命令和文件名用反引号包起来')
+  .replace('风险、限制、代价放在末尾', '风险、限制、代价放在最后一条')
+
+test('a saved copy of an older built-in prompt is not the reader\'s own', async () => {
+  const systems = []
+  const echo = async function* (request) {
+    systems.push(request.system)
+    yield { type: 'text-delta', text: '短' }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }
+  const fresh = await host(echo)
+  const current = (await fresh.send('/interpreter/config', undefined, 'GET').done).defaultPrompt
+  const released = releasedPrompt(current)
+  assert.notEqual(released, current)
+
+  // A profile saved under 0.2.1 holds that text verbatim, maybe with CRLF from the YAML.
+  for (const saved of [released, `${released.replace(/\n/g, '\r\n')}\n`]) {
+    systems.length = 0
+    const h = await host(echo, { config: { prompt: saved } })
+    const gate = await h.send('/interpreter/config', undefined, 'GET').done
+    assert.equal(gate.ownPrompt, false)
+    assert.equal(gate.settings.prompt, current)
+    h.setLog([answer()])
+    await h.rewrite({ sessionId: 's', seq: 1 }).done
+    assert.equal(systems[0], current)
+    // The next save of any row takes the stale copy out of the row.
+    await h.config({ temperature: 0.5 }).done
+    assert.equal('prompt' in h.row.options.config, false)
+    await h.cleanup()
+  }
+})
+
+test('only a prompt of the reader\'s own is written to the row', async () => {
+  const h = await host(answers('ok'), { live: true })
+  const current = (await h.send('/interpreter/config', undefined, 'GET').done).defaultPrompt
+  // The settings page sends the prompt with every save; the built-in is not stored.
+  let saved = await h.config({ temperature: 0.5, prompt: current }).done
+  assert.equal('prompt' in h.row.options.config, false)
+  assert.equal(saved.ownPrompt, false)
+  saved = await h.config({ prompt: '只留结论。' }).done
+  assert.equal(h.row.options.config.prompt, '只留结论。')
+  assert.equal(saved.ownPrompt, true)
+  assert.equal(saved.settings.prompt, '只留结论。')
+  // 恢复默认 sends the built-in back: the reader's text leaves the row.
+  saved = await h.config({ prompt: current }).done
+  assert.equal('prompt' in h.row.options.config, false)
+  assert.equal(saved.ownPrompt, false)
+  assert.equal(saved.settings.prompt, current)
+  await h.cleanup()
+})
+
+test('the prompt switch picks a built-in, and each keeps its own rewrite', async () => {
+  const systems = []
+  const h = await host(async function* (request, call) {
+    systems.push(request.system)
+    yield { type: 'text-delta', text: `draft ${call}` }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }, { live: true })
+  const gate = await h.send('/interpreter/config', undefined, 'GET').done
+  h.setLog([answer()])
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.equal(systems[0], gate.builtInPrompts.baseline)
+
+  const switched = await h.config({ variant: 'roles' }).done
+  assert.equal(switched.variant, 'roles')
+  assert.equal(h.state.restarts, 0)
+  assert.equal((await h.send('/interpreter/config', undefined, 'GET').done).variant, 'roles')
+  assert.equal((await h.rewrite({ sessionId: 's', seq: 1 }).done).text, 'draft 2')
+  assert.equal(systems[1], gate.builtInPrompts.roles)
+  // Back to 基准: its own rewrite is still cached, so the comparison costs nothing more.
+  await h.config({ variant: 'baseline' }).done
+  assert.equal((await h.rewrite({ sessionId: 's', seq: 1 }).done).text, 'draft 1')
+  assert.equal(h.state.calls, 2)
+
+  // The reader's own prompt replaces 基准 only; 角色版 stays built in.
+  await h.config({ prompt: '只留结论。' }).done
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.equal(systems.at(-1), '只留结论。')
+  await h.config({ variant: 'roles' }).done
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.equal(systems.at(-1), gate.builtInPrompts.roles)
+
+  const refused = await h.config({ variant: 'mine' }).done
+  assert.equal(refused.status, 'error')
+  assert.equal(refused.message, 'variant must be one of baseline, roles')
+  await h.cleanup()
+})
+
+test('the tightening pass speaks the way of cutting of the prompt in force', async () => {
+  const prompts = []
+  const long = async function* (request) {
+    prompts.push(request.messages[0].content[0].text)
+    yield { type: 'text-delta', text: 'y'.repeat(1000) }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }
+  const h = await host(long, { live: true })
+  h.setLog([answer()])
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.match(prompts[1], /再压一遍：只留结论、必要步骤和风险/)
+  await h.config({ variant: 'roles' }).done
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.match(prompts[3], /保留开头的结论句和各块小标题/)
+  await h.cleanup()
+})
+
+/** An answer in three sections under a title, with a `#` comment in a script that is not a heading. */
+const SECTIONED = [
+  '# HTTP 缓存', '先说清楚两层缓存。',
+  '## 一、强缓存', 'a'.repeat(1000),
+  '## 二、协商缓存', 'b'.repeat(1000), '```sh', '# 不是标题', 'curl -I /', '```',
+  '## **三、怎么配：**', 'c'.repeat(1000),
+].join('\n\n')
+
+/** A 速览 laid out the way 角色版 asks for a sectioned answer. */
+const BLOCKED = '强缓存不问服务器，协商缓存问一次。\n\n#### 两层缓存\n- 强缓存直接用本地副本\n\n#### 怎么配\n- 静态资源配长缓存'
+
+/** A host whose model answers `drafts[call - 1]`, keeping each message it was sent. */
+async function rolesHost(drafts, prompts, config = {}) {
+  const h = await host(async function* (request, call) {
+    prompts.push(request.messages[0].content[0].text)
+    yield { type: 'text-delta', text: drafts[Math.min(call, drafts.length) - 1] }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }, { config: { variant: 'roles', ...config } })
+  return h
+}
+
+test('角色版 is told the layout code read from the answer', async () => {
+  const prompts = []
+  // Every answer after the first is flat, and so is every draft after the first.
+  const h = await rolesHost([BLOCKED, '结论。\n\n- 一\n- 二'], prompts)
+  h.setLog([{ ...answer(), text: SECTIONED }])
+  const result = await h.rewrite({ sessionId: 's', seq: 1 }).done
+  // The lone title is not a section, the script comment is not a heading, and marks are dropped.
+  const hint = prompts[0].split('\n---\n').at(-1)
+  assert.match(hint, /原文分 3 节：「一、强缓存」、「二、协商缓存」、「三、怎么配」。速览按这个顺序合并成 2–4 块，每块用 #### 小标题/)
+  assert.doesNotMatch(hint, /不是标题|原文最后在请读者做决定/)
+  // A draft laid out as told goes out as it came: one call.
+  assert.equal(result.text, BLOCKED)
+  assert.equal(h.state.calls, 1)
+
+  // An answer with no sections is told to stay flat.
+  h.setLog([answer()])
+  await h.rewrite({ sessionId: 's2', seq: 1 }).done
+  assert.match(prompts[1], /这条速览不用分块：写成一句结论加几条要点，不用小标题。/)
+
+  // Sections with no room for headings stay flat too: 600 characters leave a 210-character budget.
+  h.setLog([{ ...answer(), text: `## 一\n\n${'a'.repeat(200)}\n\n## 二\n\n${'b'.repeat(200)}\n\n## 三\n\n${'c'.repeat(200)}` }])
+  await h.rewrite({ sessionId: 's3', seq: 1 }).done
+  assert.match(prompts[2], /这条速览不用分块/)
+
+  // An answer that ends by asking puts the decision first, whether asked in prose or by the tool.
+  h.setLog([{ ...answer(), text: `${LONG}\n\n要我按这个改吗？` }])
+  await h.rewrite({ sessionId: 's4', seq: 1 }).done
+  assert.match(prompts[3], /原文最后在请读者做决定：把要决定的事和各选项的代价放在结论之后。/)
+  const asked = JSON.stringify({ questions: [{ question: '修吗', options: [{ label: '修' }] }] })
+  h.setLog([{ ...answer(), text: `${LONG}\n\n<ask_user_question>${asked}</ask_user_question>` }])
+  await h.rewrite({ sessionId: 's5', seq: 1 }).done
+  assert.match(prompts[4], /原文最后在请读者做决定/)
+  await h.cleanup()
+})
+
+test('a 角色版 draft laid out wrong goes back once with what to fix', async () => {
+  const cases = [
+    // Sectioned answer, flat draft: told the sections to block by.
+    [SECTIONED, '结论。\n\n- 一\n- 二', /要再改一遍：没有分块：按「一、强缓存」、「二、协商缓存」、「三、怎么配」的顺序合并成 2–4 块，每块加 #### 小标题。内容不要增减。/],
+    // A heading before the opening sentence.
+    [SECTIONED, '#### 两层缓存\n- 强缓存\n\n#### 怎么配\n- 长缓存', /开头先写一句结论，小标题放在它后面。/],
+    // A category word as a heading.
+    [SECTIONED, '结论。\n\n#### 结论\n- 一\n\n#### 怎么配\n- 二', /小标题「结论」是分类名，换成内容本身的词。/],
+    // Too many blocks.
+    [SECTIONED, `结论。${'\n\n#### 块\n- 一'.repeat(5)}`, /分了 5 块，太多：合并成不超过 4 块。/],
+    // Flat answer, headed draft.
+    [LONG, '结论。\n\n#### 一\n- 一\n\n#### 二\n- 二', /这条不用分块：去掉小标题，写成一句结论加几条要点。/],
+  ]
+  for (const [text, draft, told] of cases) {
+    const prompts = []
+    const fixed = text === LONG ? '结论。\n\n- 一\n- 二' : BLOCKED
+    const h = await rolesHost([draft, fixed], prompts)
+    h.setLog([{ ...answer(), text }])
+    const result = await h.rewrite({ sessionId: 's', seq: 1 }).done
+    assert.match(prompts[1], told, draft)
+    assert.ok(prompts[1].endsWith(`\n\n${draft}`))
+    // The repair has no layout faults left, so it wins even where it is longer.
+    assert.equal(result.text, fixed, draft)
+    assert.equal(h.state.calls, 2)
+    await h.cleanup()
+  }
+})
+
+test('a 角色版 repair is kept only when its layout is no worse', async () => {
+  // Over budget and laid out wrong: one pass fixes both, under the same language rule.
+  let prompts = []
+  let h = await rolesHost([`结论。\n\n- ${'y'.repeat(1500)}`, BLOCKED], prompts, { language: 'zh' })
+  h.setLog([{ ...answer(), text: SECTIONED }])
+  let result = await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.match(prompts[1], /没有分块.*另外它还有 \d+ 字，超过 900 字的上限，再压一遍：保留开头的结论句和各块小标题/)
+  assert.match(prompts[1], /速览一律用中文写/)
+  assert.equal(result.text, BLOCKED)
+  assert.equal(h.state.calls, 2)
+  await h.cleanup()
+
+  // A repair that comes back with more faults than the draft loses to it.
+  prompts = []
+  const named = '结论。\n\n#### 结论\n- 一\n\n#### 怎么配\n- 二'
+  h = await rolesHost([named, '#### 结论\n- 一'], prompts)
+  h.setLog([{ ...answer(), text: SECTIONED }])
+  result = await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.equal(result.text, named)
+  await h.cleanup()
+
+  // A tightening pass that drops the headings loses to the longer draft that kept them.
+  prompts = []
+  const long = `结论。\n\n#### 两层缓存\n- ${'y'.repeat(1400)}\n\n#### 怎么配\n- 二`
+  h = await rolesHost([long, '结论。'], prompts)
+  h.setLog([{ ...answer(), text: SECTIONED }])
+  result = await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.match(prompts[1], /^下面这段已经压过一遍/)
+  assert.equal(result.text, long)
+  await h.cleanup()
+})
+
+test('基准 gets no layout hint and no layout check', async () => {
+  const prompts = []
+  const h = await host(async function* (request) {
+    prompts.push(request.messages[0].content[0].text)
+    yield { type: 'text-delta', text: '#### 结论\n- 一' }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  })
+  h.setLog([{ ...answer(), text: SECTIONED }])
+  const result = await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.ok(prompts[0].endsWith('速览请控制在 900 字以内。'))
+  assert.equal(result.text, '#### 结论\n- 一')
+  assert.equal(h.state.calls, 1)
   await h.cleanup()
 })
 

@@ -294,6 +294,15 @@ window.__ModuleLoader__.load({
       { value: 'normal', label: '普通' },
       { value: 'detailed', label: '详细' },
     ];
+    /**
+     * The built-in prompt in force, in the same words the Host stores. 基准 runs the
+     * reader's own prompt when they wrote one, so the menu then calls it 自定义.
+     */
+    const VARIANT_LABEL = { baseline: '基准', roles: '角色版' };
+    const VARIANT_MENU = [
+      { value: 'baseline', label: '基准' },
+      { value: 'roles', label: '角色版（实验）' },
+    ];
     /** The answer's own language, or one fixed, in the same three words the Host stores. */
     const LANG_LABEL = { auto: '跟随', zh: '中文', en: '英文' };
     const LANG_MENU = [
@@ -709,10 +718,11 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Change the mode, the allow-list, the length tier or the language. Only the
-     * change travels, never the whole list: every block holds its own copy, and a
-     * stale copy sent back would wipe out what another block added.
-     * @param change - `{ mode?, addSessions?, removeSessions?, length?, language? }`.
+     * Change the mode, the allow-list, the length tier, the language or the
+     * built-in prompt. Only the change travels, never the whole list: every block
+     * holds its own copy, and a stale copy sent back would wipe out what another
+     * block added.
+     * @param change - `{ mode?, addSessions?, removeSessions?, length?, language?, variant? }`.
      */
     function saveGate(change) {
       return fetch(CONFIG, {
@@ -745,6 +755,26 @@ window.__ModuleLoader__.load({
      */
     function effectiveLanguage(gate) {
       return LANG_LABEL[gate?.language] === undefined ? 'auto' : gate.language;
+    }
+
+    /**
+     * The built-in prompt a gate names, standing in with 基准 for anything else: an
+     * older Host, or a row written by hand in a newer vocabulary.
+     */
+    function effectiveVariant(gate) {
+      return VARIANT_LABEL[gate?.variant] === undefined ? 'baseline' : gate.variant;
+    }
+
+    /** The gate's switches as every block shares them, read from a Host reply. */
+    function gateOf(reply, previous) {
+      return {
+        mode: typeof reply.mode === 'string' ? reply.mode : previous?.mode ?? 'manual',
+        sessions: Array.isArray(reply.sessions) ? reply.sessions : previous?.sessions ?? [],
+        length: effectiveLength(reply),
+        language: effectiveLanguage(reply),
+        variant: effectiveVariant(reply),
+        ownPrompt: typeof reply.ownPrompt === 'boolean' ? reply.ownPrompt : previous?.ownPrompt === true,
+      };
     }
 
     /** 12431 is harder to take in at a glance than 12.4k. */
@@ -940,13 +970,7 @@ window.__ModuleLoader__.load({
      * @param saved - the canonical reply a save answered with.
      */
     function publishGate(saved) {
-      const previous = gateStore.value;
-      setSharedGate({
-        mode: typeof saved.mode === 'string' ? saved.mode : previous?.mode ?? 'manual',
-        sessions: Array.isArray(saved.sessions) ? saved.sessions : previous?.sessions ?? [],
-        length: effectiveLength(saved),
-        language: effectiveLanguage(saved),
-      });
+      setSharedGate(gateOf(saved, gateStore.value));
     }
 
     function loadGate() {
@@ -956,19 +980,14 @@ window.__ModuleLoader__.load({
         .then((result) => {
           if (result.status !== 'ok') throw new Error(result.message ?? '读不到设置');
           gateStore.failed = false;
-          setSharedGate({
-            mode: result.mode,
-            sessions: Array.isArray(result.sessions) ? result.sessions : [],
-            length: effectiveLength(result),
-            language: effectiveLanguage(result),
-          });
+          setSharedGate(gateOf(result, null));
         })
         .catch(() => {
           // Unreadable settings must not start spending: stand in with the
           // default, a folded line that waits for a click, and let the next
           // block that mounts try again.
           gateStore.failed = true;
-          setSharedGate({ mode: 'manual', sessions: [], length: 'normal', language: 'auto' });
+          setSharedGate({ mode: 'manual', sessions: [], length: 'normal', language: 'auto', variant: 'baseline', ownPrompt: false });
         })
         .finally(() => { gateStore.loading = false; });
     }
@@ -1057,7 +1076,7 @@ window.__ModuleLoader__.load({
       const [historic, setHistoric] = useState(false);
       /** The last failed save: it shows in the head, where the menu came from. */
       const [modeError, setModeError] = useState('');
-      /** Bumped when the length tier or the language changes: this block redoes its Turn. */
+      /** Bumped when the length tier, the language or the prompt changes: this block redoes its Turn. */
       const [revision, setRevision] = useState(0);
       /** The catalog, read the first time the menu opens and kept afterwards. */
       const [models, setModels] = useState(null);
@@ -1226,12 +1245,7 @@ window.__ModuleLoader__.load({
             if (!started && pick !== 'manual') setWanted(true);
             // The Host answers with the whole gate, other blocks' changes included.
             if (typeof result.mode === 'string' && Array.isArray(result.sessions)) {
-              setSharedGate({
-                mode: result.mode,
-                sessions: result.sessions,
-                length: effectiveLength(result),
-                language: effectiveLanguage(result),
-              });
+              setSharedGate(gateOf(result, previous));
             }
           })
           .catch((error) => {
@@ -1282,6 +1296,34 @@ window.__ModuleLoader__.load({
             setSharedGate(previous);
             setModeError(error instanceof Error ? error.message : String(error));
           });
+      };
+
+      /**
+       * The prompt switch works like the language one: written through for every
+       * block, and only the block that was clicked redoes its Turn. Each prompt
+       * keeps its own cache, so flipping between them on one answer compares the
+       * two at the cost of one rewrite each.
+       */
+      const chooseVariant = (pick) => {
+        closeMenu();
+        setModeError('');
+        const previous = gate;
+        setSharedGate({ ...previous, variant: pick });
+        saveGate({ variant: pick })
+          .then((result) => {
+            if (result.status !== 'ok') throw new Error(result.message ?? '没保存上');
+            if (previous.variant !== pick && started) setRevision((n) => n + 1);
+          })
+          .catch((error) => {
+            setSharedGate(previous);
+            setModeError(error instanceof Error ? error.message : String(error));
+          });
+      };
+
+      /** The 基准 row's name: 自定义 while it runs the reader's own prompt. */
+      const variantLabel = (value, menu) => {
+        if (value === 'baseline' && gate?.ownPrompt === true) return '自定义';
+        return menu ? VARIANT_MENU.find((item) => item.value === value)?.label ?? '' : VARIANT_LABEL[value] ?? '';
       };
 
       /** Clicking anywhere else folds the menu away. */
@@ -1440,7 +1482,7 @@ window.__ModuleLoader__.load({
         h('span', { key: 'out', style: { ...CHECK_SLOT, transform: 'rotate(180deg)' } }, h(Chevron, { shown: false })),
         h('span', { style: ITEM_TEXT }, '返回'));
 
-      /** The card's contents: the four switches, or the list one of them opens. */
+      /** The card's contents: the five switches, or the list one of them opens. */
       let menuRows;
       if (view === 'mode') {
         const current = gate === null ? null : effectiveMode(gate, sessionId);
@@ -1459,6 +1501,12 @@ window.__ModuleLoader__.load({
         menuRows = [backRow, ...LANG_MENU.map((item) => menuRow(
           item.value, item.label, item.value === current, item.value === hover,
           () => chooseLanguage(item.value), () => setHover(item.value), () => setHover(null),
+        ))];
+      } else if (view === 'variant') {
+        const current = gate === null ? null : effectiveVariant(gate);
+        menuRows = [backRow, ...VARIANT_MENU.map((item) => menuRow(
+          item.value, variantLabel(item.value, true), item.value === current, item.value === hover,
+          () => chooseVariant(item.value), () => setHover(item.value), () => setHover(null),
         ))];
       } else if (view === 'model') {
         const rows = [];
@@ -1495,6 +1543,7 @@ window.__ModuleLoader__.load({
           valueRow('mode', '自动速览', gate === null ? '' : MODE_LABEL[effectiveMode(gate, sessionId)] ?? '', 'mode'),
           valueRow('length', '详略', gate === null ? '' : LENGTH_LABEL[effectiveLength(gate)] ?? '', 'length'),
           valueRow('language', '语言', gate === null ? '' : LANG_LABEL[effectiveLanguage(gate)] ?? '', 'language'),
+          valueRow('variant', '提示词', gate === null ? '' : variantLabel(effectiveVariant(gate), false), 'variant'),
           valueRow('model', '模型', modelLabel(), 'model'),
           h('div', { key: 'split', style: DIVIDER }),
           h('button', {
@@ -1700,7 +1749,10 @@ window.__ModuleLoader__.load({
       const [modelOpen, setModelOpen] = useState(false);
       const [length, setLength] = useState('normal');
       const [language, setLanguage] = useState('auto');
+      const [variant, setVariant] = useState('baseline');
       const [defaultPrompt, setDefaultPrompt] = useState('');
+      /** The built-in 角色版 text, shown read-only while that prompt is in force. */
+      const [rolePrompt, setRolePrompt] = useState('');
       const [tokensToday, setTokensToday] = useState(0);
       const [saving, setSaving] = useState(false);
       const [error, setError] = useState('');
@@ -1719,17 +1771,20 @@ window.__ModuleLoader__.load({
             const nextDraft = draftOf(gate.settings);
             const nextLength = effectiveLength(gate);
             const nextLanguage = effectiveLanguage(gate);
+            const nextVariant = effectiveVariant(gate);
             // No model chosen yet is a real state: the row must stay empty rather
             // than become a `::` pair the Host would refuse.
             const nextModel = catalog.provider === '' || catalog.model === '' ? '' : `${catalog.provider}::${catalog.model}`;
             setDraft(nextDraft);
             setLength(nextLength);
             setLanguage(nextLanguage);
+            setVariant(nextVariant);
             setModel(nextModel);
             setModels({ providers: catalog.providers });
             setDefaultPrompt(typeof gate.defaultPrompt === 'string' ? gate.defaultPrompt : '');
+            setRolePrompt(typeof gate.builtInPrompts?.roles === 'string' ? gate.builtInPrompts.roles : '');
             setTokensToday(typeof gate.tokensToday === 'number' && Number.isFinite(gate.tokensToday) ? gate.tokensToday : 0);
-            setInitial({ draft: nextDraft, model: nextModel, length: nextLength, language: nextLanguage });
+            setInitial({ draft: nextDraft, model: nextModel, length: nextLength, language: nextLanguage, variant: nextVariant });
             setState({ kind: 'ready' });
           },
           (failure) => setState({
@@ -1770,6 +1825,7 @@ window.__ModuleLoader__.load({
         model !== initial.model
         || length !== initial.length
         || language !== initial.language
+        || variant !== initial.variant
         || Object.keys(initial.draft).some((key) => draft[key] !== initial.draft[key])
       );
 
@@ -1799,6 +1855,7 @@ window.__ModuleLoader__.load({
           ...rows,
           length,
           language,
+          variant,
           // The pair is the one thing the Host will not take half of.
           ...(model === '' || !provider || !id ? null : { provider, model: id }),
         })
@@ -1811,7 +1868,7 @@ window.__ModuleLoader__.load({
             // shared gate, so their menus are current the moment the reader returns.
             publishGate(result);
             setDraft(nextDraft);
-            setInitial({ draft: nextDraft, model, length, language });
+            setInitial({ draft: nextDraft, model, length, language, variant });
             setSaved(true);
           })
           .catch((failure) => {
@@ -1936,9 +1993,12 @@ window.__ModuleLoader__.load({
                     ]))
             : null);
 
-        const promptText = draft?.prompt ?? '';
+        // 角色版 is built in and not editable: the box shows it, read-only, and the
+        // reader's own text waits untouched for 基准.
+        const showsRoles = variant === 'roles' && rolePrompt !== '';
+        const promptText = showsRoles ? rolePrompt : draft?.prompt ?? '';
         const promptLen = promptText.length;
-        const promptCustomized = defaultPrompt !== '' && promptText !== defaultPrompt;
+        const promptCustomized = !showsRoles && defaultPrompt !== '' && promptText !== defaultPrompt;
 
         const rawTemp = Number(draft?.temperature);
         const sliderTemp = Number.isFinite(rawTemp) ? Math.min(2, Math.max(0, rawTemp)) : 0.3;
@@ -1956,11 +2016,15 @@ window.__ModuleLoader__.load({
           h('div', { className: 'ra-set-card' },
             cardRow('model', '模型', modelPicker),
             cardRow('length', '详略', segment(LENGTH_MENU, length, setLength)),
-            cardRow('language', '语言', segment(LANG_MENU, language, setLanguage))),
+            cardRow('language', '语言', segment(LANG_MENU, language, setLanguage)),
+            cardRow('variant', '提示词', segment(VARIANT_MENU, variant, setVariant), {
+              tip: '基准是一直以来的写法，下面改过的提示词就用在它上面；角色版按每块内容的作用取舍，是内置的实验写法，不能改。两种各自缓存，可以在同一条回答上来回对比。',
+            })),
           h('section', { className: 'ra-set-section' },
             h('div', { className: 'ra-set-sec-bar' },
-              h('span', { className: 'ra-set-head' }, '提示词'),
+              h('span', { className: 'ra-set-head' }, showsRoles ? '角色版提示词' : '基准提示词'),
               h('span', { className: 'ra-set-sec-meta' },
+                showsRoles ? h('span', { key: 'fixed' }, '内置 · 只读') : null,
                 promptCustomized
                   ? h('button', {
                       type: 'button',
@@ -1981,7 +2045,8 @@ window.__ModuleLoader__.load({
               spellCheck: false,
               maxLength: MAX_PROMPT_CHARS,
               value: promptText,
-              onChange: edit('prompt'),
+              readOnly: showsRoles,
+              onChange: showsRoles ? undefined : edit('prompt'),
             })),
           h('section', { className: 'ra-set-section' },
             h('div', { className: 'ra-set-sec-bar' },

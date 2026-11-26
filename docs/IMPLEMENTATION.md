@@ -40,6 +40,7 @@
 - **自动速览**：`全部` / `本会话` / `手动`
 - **详略**：`普通` / `详细`（切完立即按新档重写当前块，其他块同步跟随；两档各自缓存，来回切换不重复计费）
 - **语言**：`跟随原文` / `中文` / `英文`（三种选择各自缓存，首次生成与二次收紧均遵守）
+- **提示词**：`基准` / `角色版（实验）`（两种内置写法各自缓存，切完只重做当前块；基准在跑用户自己的提示词时这一行显示 `自定义`）
 - **模型**：列出本机全部可用的 provider / model，选中即保存并重做当前块
 - 分隔线下是 **设置**：收起菜单并弹出「速览设置」弹窗
 
@@ -52,8 +53,8 @@
 通过 `⋯` → 「设置」唤起，复用宿主 `@deepseek-ai/dsh-client-ui-primitives` 的 `Modal` 与 `Button`，挂载在 `shell.overlay` 上，背景压暗、底层会话位置不动。
 
 弹窗分三块紧凑排布，统一适配深/浅色主题：
-1. **核心配置卡片**：自定义分组模型下拉框（替代原生 `<select>`，按 provider 分组、带勾选高亮、Esc 优先收起下拉不误关弹窗、自动去重 `provider/` 前缀）、`详略` 分段切换器（`普通` / `详细`）、`语言` 分段切换器（`跟随原文` / `中文` / `英文`）。
-2. **提示词编辑区**：使用正文无衬线字体（`--dsw-font-family`）和细圆角滚动条，右上角实时显示字数（`当前 / 8000`），与内置提示词不同时出现一键「恢复默认」。
+1. **核心配置卡片**：自定义分组模型下拉框（替代原生 `<select>`，按 provider 分组、带勾选高亮、Esc 优先收起下拉不误关弹窗、自动去重 `provider/` 前缀）、`详略` 分段切换器（`普通` / `详细`）、`语言` 分段切换器（`跟随原文` / `中文` / `英文`）、`提示词` 分段切换器（`基准` / `角色版（实验）`）。
+2. **提示词编辑区**：使用正文无衬线字体（`--dsw-font-family`）和细圆角滚动条，右上角实时显示字数（`当前 / 8000`）。选「基准」时编辑的是基准提示词，与内置原文不同时出现一键「恢复默认」；选「角色版」时框里显示角色版的内置原文，只读，标注「内置 · 只读」，用户自己的基准提示词原样保留。
 3. **参数卡片**：
    - `触发字数`：`min` / `max`（原文字数范围）
    - `普通档篇幅`：`ratio` / `cap`（选「详细」档时柔和降不透明度，悬停或聚焦恢复可编辑）
@@ -76,20 +77,45 @@
 | `sessions` | `[]` | `session` 模式下的会话白名单（最多保留最近 200 条） |
 | `length` | `'normal'` | 长度档位：`normal`（普通）/ `detailed`（详细，固定 `0.5` / `1600`） |
 | `language` | `'auto'` | 输出语言：`auto`（跟随原文）/ `zh` / `en` |
+| `variant` | `'baseline'` | 内置写法：`baseline`（基准）/ `roles`（角色版，实验） |
 | `minChars` | `400` | 原文短于该字数跳过 |
 | `maxChars` | `40000` | 原文长于该字数跳过 |
 | `ratio` | `0.35` | 普通档目标字数占原文比例（`0 < ratio < 1`） |
 | `capChars` | `900` | 普通档速览字数上限（不小于 150 的整数） |
 | `temperature` | `0.3` | 采样温度（`0`–`2`） |
-| `prompt` | 内置 | 改写系统提示词（1–8000 字） |
+| `prompt` | 内置 | 用户自己的改写系统提示词（1–8000 字），只替换基准 |
 | `dailyTokenCap` | `0` | 自动模式每日 token 上限，`0` 为不限（内存按自然日计数，重启清零） |
+
+### 内置提示词与用户提示词
+
+- 内置提示词只放在代码里：`BUILT_IN_PROMPTS` 按 `variant` 存基准（`DEFAULT_PROMPT`）和角色版（`ROLE_PROMPT`）。实际用哪段由 `promptOf()` 决定：`variant` 是 `baseline` 且行里有用户自己的 `prompt` 时用后者，否则用所选内置。
+- 行里只存用户自己的提示词。`persist()` 每次保存都会检查合并后的行：`prompt` 是任一内置原文（当前或历史）时直接删掉这个字段。设置弹窗每次保存都会把提示词一并发来，「恢复默认」发回的也是内置原文，所以这两种情况都不会把内置原文写进行里。
+- 0.2.1 及更早的版本会把内置原文整段存进行里。识别靠 `PAST_BUILT_IN_PRINTS` 里的 SHA-256 指纹，比较前统一换行并去掉首尾空白。命中的行读取时按当前内置处理（`formOf()`、`promptOf()`、`ownPrompt` 都照此），下次任意保存时从行里删掉。**修改 `DEFAULT_PROMPT` 时，要把旧原文的指纹加进 `PAST_BUILT_IN_PRINTS`**，否则存着旧原文的行会被当成用户自定义。
+- 角色版不开放编辑。路由以后会依赖各个内置写法的行为，被用户改过的副本没法跟着版本更新。
+
+### 角色版的版式由代码决定
+
+角色版的提示词只管内容取舍。分不分块、分几块、按什么顺序，都由 Host 代码在调用模型前决定，生成后再由代码检查。基准不走这套，行为不变。
+
+- **扫描**：`outlineOf()` 读原文的 Markdown 标题，跳过 ```` ``` ```` / `~~~` 围起来的代码，所以脚本里的 `#` 注释不算标题。出现两次以上的最高一级标题算作「节」：文章顶上单独一个标题不算一节，节下面的小节也不算。原文含 `<ask_user_question>` 转出的提问行，或正文以问号结尾时，记为「在等读者做决定」。
+- **定版式**：节数 ≥ 3（`MIN_SECTIONS`）且字数预算 ≥ 300（`MIN_BLOCK_BUDGET`）时分块。`layoutHint()` 在预算那句后面列出原文各节的标题，要求按这个顺序合并成 2–4 块，每块用 `####` 小标题。其余情况要求写成一句结论加几条要点，不用小标题。在等读者做决定时，再要求把这件事和各选项的代价放在结论之后。
+- **查排版**：`layoutProblems()` 只查版式，不碰内容：
+  - 第一行是不是标题；
+  - 该分块时有没有小标题，块数是否超过 4（`MAX_BLOCKS`）；
+  - 不该分块时有没有小标题；
+  - 小标题是不是「结论」「待决」「操作」「参考」「证据」「过程」「边界」这类分类名（`CATEGORY_WORDS`）。
+
+  每条问题都写成一句改法。
+- **修一次**：有问题就把这些改法连同草稿发回去重写一次。草稿同时超了预算的，同一遍里带上 `TIGHTEN.roles`；没超的，要求内容不要增减。两版比较时，排版问题少的胜出；一样多时取短的；再一样时留第一版。第二遍失败时保留第一版。排版没问题、只是超预算时，走和基准一样的二次压缩。
+- 只有不合格的草稿才多花一次调用，合格的草稿仍是一次调用。
 
 ## 它怎么变短
 
 1. 每次请求都带上具体字数预算：`普通` 档按 `原文长度 × ratio` 并夹在 `150` 与 `capChars` 之间；`详细` 档固定用 `0.5` 与 `1600`。具体数字比「请短一点」稳定得多。
 2. 若设定了固定语言（`zh` / `en`），会在用户消息末尾追加语言指令，覆盖默认「跟随原文」规则，且第一轮与二次压缩轮同时生效。
-3. 首次结果超过预算 `1.5` 倍时，带着草稿自动再压一遍，取更短的一版；两次调用的 `usage` 累加后上报。第二遍失败时保留第一版草稿，不整条报错。
-4. 渲染直接复用 DSH 的 Markdown 排版规则和主题变量，表格、列表、引用、代码块与链接图标和原文保持同一套视觉体系。
+3. 首次结果超过预算 `1.5` 倍时，带着草稿自动再压一遍，取更短的一版（角色版的草稿没通过排版检查时也会再改一遍，取舍先比排版问题，见上一节）；两次调用的 `usage` 累加后上报。第二遍失败时保留第一版草稿，不整条报错。第二遍的指令按写法区分（`TIGHTEN`）：基准沿用「只留结论、必要步骤和风险」；角色版要求保留开头的结论句和各块小标题，只在块内删减，免得第二遍把第一遍留下的待决事项删掉，或把分好的块压回一整段。
+4. 正文里若有主模型没调用成功、直接写成文字的 `<ask_user_question>` 标签（DSH 只渲染工具调用，不解析正文里的这个标签），`answerAt()` 读出原文时就把它转成文字：问题一行、每个选项连同说明各一行，去掉标签和 JSON。字数判断、预算和改写看到的都是转换后的文本。
+5. 渲染直接复用 DSH 的 Markdown 排版规则和主题变量，表格、列表、引用、代码块与链接图标和原文保持同一套视觉体系。
 
 ## 实现
 
@@ -97,11 +123,11 @@
 
 注册四个本地路由，全部声明 `auth: 'required'`：准入由宿主 `webServer` 在 handler 之前完成（凭据缺失 401、来源不受信 403、无准入决策 503），handler 只处理已登录请求，也不读未通过请求的体；三个 POST 路由仅接受 `application/json`：
 
-- `POST /interpreter/rewrite`：按事件的 `data.turn` 与 `turn/start` 在当前轮次内提取落盘的 assistant 文本（不跨轮借用），经并发限流器（上限 2）调用 `ctx.llm.stream` 改写。流以 `stop` 以外的原因结束一律判为失败且不缓存。缓存键为 `${provider}/${model}/${length}/${language}@${revision}:${sessionId}:${seq}`（最多 500 条）；同一轮并发请求共享单次调用，仅当全部等待者断开连接才中止上游流。自动请求（`auto: true`）会额外检查 `interrupted`、`autoSince`（取 `startedAt` 与配置 `autoSince` 较大值）及当日 token 限额（`skip: budget`）。
+- `POST /interpreter/rewrite`：按事件的 `data.turn` 与 `turn/start` 在当前轮次内提取落盘的 assistant 文本（不跨轮借用），经并发限流器（上限 2）调用 `ctx.llm.stream` 改写；角色版先由 `outlineOf()` / `layoutHint()` 定版式，生成后经 `layoutProblems()` 检查（见「角色版的版式由代码决定」）。流以 `stop` 以外的原因结束一律判为失败且不缓存。缓存键为 `${provider}/${model}/${length}/${language}/${variant}@${revision}:${sessionId}:${seq}`（最多 500 条）；同一轮并发请求共享单次调用，仅当全部等待者断开连接才中止上游流。自动请求（`auto: true`）会额外检查 `interrupted`、`autoSince`（取 `startedAt` 与配置 `autoSince` 较大值）及当日 token 限额（`skip: budget`）。
 - `POST /interpreter/probe`：读取同一份轮次日志判断是否满足正文存在与 `minChars`–`maxChars` 区间，返回 `ok` 或 `too-short` / `too-long` / `no-answer`；不调模型、不进缓存、不看 `autoSince`。
 - `GET /interpreter/models`：枚举 `ctx.llm.listProviders()` × `listModels()` 及当前选中的 `provider` / `model`。
-- `GET /interpreter/config`：返回 `mode`、`sessions`、`length`、`language`、`live`、`tokensToday`、`tokenCap`、`defaultPrompt` 及 `settings`（经 `formOf` 补齐默认值的表单字段）。
-- `POST /interpreter/config`：校验并持久化局部更新；白名单通过 `addSessions` / `removeSessions` 增量合并避免并发覆盖。全部 14 个配置字段（含内部 `autoSince`）均通过动态导入 `@deepseek-ai/schemastery`（声明于可选 `peerDependencies`）标记为 `.volatile()`，保存时就地更新、不重启插件；加载不到 schema 时自动退回重启模式并通过 `live: false` 上报。改动 `REWRITE_FIELDS`（`temperature`、`ratio`、`capChars`、`minChars`、`maxChars`、`prompt`）时递增 `revision`，使旧缓存与在途任务自然失效。
+- `GET /interpreter/config`：返回 `mode`、`sessions`、`length`、`language`、`variant`、`live`、`tokensToday`、`tokenCap`、`defaultPrompt`、`builtInPrompts`（各写法的内置原文）、`ownPrompt`（基准是否在跑用户自己的提示词）及 `settings`（经 `formOf` 补齐默认值的表单字段；行里只有内置原文时，`prompt` 给的是当前的基准原文）。
+- `POST /interpreter/config`：校验并持久化局部更新；白名单通过 `addSessions` / `removeSessions` 增量合并避免并发覆盖。全部 15 个配置字段（含内部 `autoSince`）均通过动态导入 `@deepseek-ai/schemastery`（声明于可选 `peerDependencies`）标记为 `.volatile()`，保存时就地更新、不重启插件；加载不到 schema 时自动退回重启模式并通过 `live: false` 上报。改动 `REWRITE_FIELDS`（`temperature`、`ratio`、`capChars`、`minChars`、`maxChars`、`prompt`）时递增 `revision`，使旧缓存与在途任务自然失效。
 
 ### Client 侧（`client.js`）
 

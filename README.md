@@ -25,7 +25,8 @@ Generates an independent "Condensed View" summary block below each DSH response,
 * **一键带走**：速览右下角的复制按钮把整段 Markdown 原文放进剪贴板，粘贴到笔记、工单或聊天里不丢格式；点完图标本身变成一个勾，一秒多后自己变回来，不会多出一行字把 token 花费挤开。
 * **长度随手调**：`⋯` 菜单里的「详略」两档快切，选完即按新档重写当前这块，其他块跟着改设置；两档各自缓存，来回切换不重复计费。
 * **语言定下来**：速览默认跟原文同语言，也可用「跟随 / 中文 / 英文」固定一种，术语和命令照抄不译；首次生成与收紧那一轮都照办，三种选择各自缓存。
-* **开关收进一个角落菜单**：区块右上角的 `⋯` 把「自动速览 / 详略 / 语言 / 模型」四行收进一个菜单，选完就关，界面上只留折起来的那一行。
+* **两种内置写法可对比**：「提示词」在「基准」和「角色版（实验）」之间切换。基准是一直以来的写法，自己改过的提示词就用在它上面。角色版按「半分钟读完」来写，提示词只管留什么（核对记录收成一句，原理只留核心概念，罗列只挑关键几项），版式由插件代码决定：先扫原文的标题结构，有 3 节以上就按原文顺序合并成 2–4 个带小标题的块，否则写成一句结论加几条要点；原文末尾在等读者做决定时，要求把这件事放在结论之后。生成后代码再查一遍排版（开头是不是结论句、块数对不对、小标题是不是「结论」「参考」这类分类名），不合格就带着具体问题重写一次。两种各自缓存，同一条回答上来回切换只各花一次。
+* **开关收进一个角落菜单**：区块右上角的 `⋯` 把「自动速览 / 详略 / 语言 / 提示词 / 模型」五行收进一个菜单，选完就关，界面上只留折起来的那一行。
 * **插件自己的设置弹窗**：菜单最后一行「设置」在会话上方弹出「速览设置」小面板，背景压暗、会话位置不动；除自动速览范围外的全部可调项（模型、详略、语言、提示词及各项长度/限额参数）集中在一处改，有改动时点「保存」就地生效并变为置灰的「已保存」，Esc、右上角 × 或点背景关掉，不用去翻 YAML，也不用重启。
 
 ### 安装与使用
@@ -43,8 +44,8 @@ Generates an independent "Condensed View" summary block below each DSH response,
 #### 2. 首次配置与运行模式
 插件安装后默认处于**手动模式**，不会自动触发调用产生费用：
 1. 点击回答下方的「› 速览」展开区块，点区块右上角的 `⋯`，先在「模型」一行选好当前环境中可用的 `provider / model`。
-2. 同一个菜单里就能调篇幅和语言：需要控制长度时切「普通 / 详细」，想固定语言就切「跟随 / 中文 / 英文」。两者都是本机偏好，存进同一个 `config`。
-3. 菜单最后一行「设置」打开「速览设置」弹窗，可直接调整提示词（支持一键恢复默认）与各项参数，有改动时点「保存」就地生效（均为 live 字段，插件不重启），Esc、右上角 × 或点遮罩关掉弹窗。
+2. 同一个菜单里就能调篇幅、语言和写法：需要控制长度时切「普通 / 详细」，想固定语言就切「跟随 / 中文 / 英文」，想对比两种内置写法就切「基准 / 角色版」。这些都是本机偏好，存进同一个 `config`。
+3. 菜单最后一行「设置」打开「速览设置」弹窗，可直接调整基准提示词（支持一键恢复默认；角色版是内置的，只能查看）与各项参数，有改动时点「保存」就地生效（均为 live 字段，插件不重启），Esc、右上角 × 或点遮罩关掉弹窗。
 4. 根据使用习惯切换运行模式（选择存进**当前 Profile 目录下**的 `cordis.patch.yml`，即其中 `- id: interpreter` 那一行的 `config`，由界面经 DSH 的配置接口写回。模型、模式、长度档位、语言、提示词与字数参数都是 DSH 的 live 字段，保存后就地生效，插件不重启，正在生成的速览不受影响）：
 
 | 模式 | 行为说明 |
@@ -72,8 +73,9 @@ Generates an independent "Condensed View" summary block below each DSH response,
 | `capChars` | `900` | 速览自身的字数上限：按 `ratio` 换算出的目标超过它时，按它算（短回答仍至少留 150 字） |
 | `length` | `normal` | 长度档位：`normal`（普通）/ `detailed`（详细）。`detailed` 自带比例和上限（0.5 / 1600），覆盖 `ratio`、`capChars`；`normal` 用配置里的值 |
 | `language` | `auto` | 速览语言：`auto`（跟随原文）/ `zh`（固定中文）/ `en`（固定英文）。固定后即使原文是另一种语言也照办 |
+| `variant` | `baseline` | 内置写法：`baseline`（基准）/ `roles`（角色版，实验）。自定义的 `prompt` 只替换基准 |
 | `temperature` | `0.3` | 摘要生成的采样温度 |
-| `prompt` | 内置 | 摘要改写指令，可通过自定义指令调整输出风格 |
+| `prompt` | 内置 | 自己写的改写指令，替换基准提示词。只有和内置提示词不同时才会存进这一行；早先版本存下的内置提示词原文会被认出来，按当前内置版本处理，下次保存时从这一行删掉 |
 | `dailyTokenCap` | `0` | 自动模式每天最多花掉的 tokens（按本机自然日算，插件重启后清零；手动生成也计入当日用量），`0` 表示不限。到额度后只是不再自动整理，手动点「速览」不受限制 |
 
 ### 模型选择建议
@@ -82,7 +84,7 @@ Generates an independent "Condensed View" summary block below each DSH response,
 
 ### 费用与隐私说明
 
-* **计费与缓存**：每次生成对应一次模型调用；若首次生成结果超出字数预算的 1.5 倍，插件会基于草稿自动执行二次压缩（界面显示的 Token 数为两次调用之和）。生成结果按「模型 + 会话 + 轮次序号 + 长度档位 + 语言」缓存，重复展开不重复计费；换了模型、档位或语言会重新生成，切回原来的组合时，之前的结果仍然有效。
+* **计费与缓存**：每次生成对应一次模型调用；若首次生成结果超出字数预算的 1.5 倍，或角色版的草稿没通过排版检查，插件会带着草稿自动再改一遍（界面显示的 Token 数为两次调用之和）。生成结果按「模型 + 会话 + 轮次序号 + 长度档位 + 语言 + 内置写法」缓存，重复展开不重复计费；换了模型、档位、语言或写法会重新生成，切回原来的组合时，之前的结果仍然有效。
 * **自动模式费用护栏**：给 `dailyTokenCap` 设一个大于 0 的值后，插件会记下当天自己花掉的 Token 数（手动生成也算），累计花到额度后自动整理停下，在这一轮留下一行提示，点开可看用量并手动生成；手动点击不受额度限制，第二天自动恢复。计数只在内存里，重启 DSH 或插件后从零开始，所以它是防跑飞的刹车，不是精确账单。
 * **数据边界**：除将当前轮次已生成的回答发送至用户所选的摘要模型接口外，不向任何第三方上传数据。
 
@@ -140,7 +142,8 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 * **Take It With You**: A copy button in the summary's bottom-right corner puts the whole Markdown on the clipboard, formatting intact for a note, an issue, or a chat message; the icon itself turns into a check for a moment and then back, so no text pushes the token count aside.
 * **Length On Tap**: 「详略」 in the `⋯` menu switches tier in one click; the current block is rewritten at the new size and other blocks follow the setting. Each tier keeps its own cache, so switching back and forth costs nothing.
 * **Language, Pinned**: the 速览 follows the answer's own language by default, or 「跟随 / 中文 / 英文」 pins one; terms and commands are copied verbatim, never translated. Both the first draft and the tightening pass obey it, and each choice keeps its own cache.
-* **Switches in One Corner**: `⋯` at the block's top-right folds 自动速览 / 详略 / 语言 / 模型 into one menu that closes on a pick, leaving the folded row to carry the line on its own.
+* **Two Built-In Prompts to Compare**: 「提示词」 switches between 「基准」 and 「角色版（实验）」. 基准 is the long-standing prompt, and a prompt you edit applies to it. 角色版 is written to be read in half a minute; its prompt decides only what to keep (a table of passed checks becomes one sentence, an explanation keeps only its core idea, long lists keep their key items), while the layout is decided in code: the plugin scans the answer's headings, and three or more sections become 2–4 headed blocks in the answer's own order, anything else one opening sentence and a few points; an answer that ends by asking the reader to decide gets that decision placed right after the conclusion. Code then checks the draft's layout (opening sentence first, the right number of blocks, no category words such as 「结论」 as headings) and sends a faulty draft back once with what to fix. Each keeps its own cache, so flipping between them on one answer costs one rewrite each.
+* **Switches in One Corner**: `⋯` at the block's top-right folds 自动速览 / 详略 / 语言 / 提示词 / 模型 into one menu that closes on a pick, leaving the folded row to carry the line on its own.
 * **A Settings Dialog of Its Own**: the menu's last row, 「设置」, opens 「速览设置」 as a small panel over the conversation — the page behind dims and stays exactly where it was: every tuning option except the automation scope (model, tier, language, prompt, and all length/budget parameters) lives in one place. 「保存」 stays disabled until edited, lands in place without restarting, and turns into disabled 「已保存」 — no YAML to edit, and Esc, the × or a click on the backdrop closes it.
 
 ### Installation & Usage
@@ -158,8 +161,8 @@ Models optimized for complex tasks often include extensive reasoning steps, veri
 #### 2. Initial Setup & Modes
 The plugin defaults to **Manual** mode so no calls are made automatically upon installation:
 1. Click "› 速览" below a response, then `⋯` at its top-right, and pick an available `provider / model` from the 「模型」 row.
-2. The same menu carries size and language: 「普通 / 详细」 for the tier and 「跟随 / 中文 / 英文」 to pin the language; both are local preferences and land in the same `config`.
-3. The menu's last row, 「设置」, opens the 「速览设置」 dialog to edit the prompt (with one-click restore default) and tuning parameters. 「保存」 stays disabled until edited, writes changes in place (all live fields, no plugin restart), and turns into disabled 「已保存」; Esc, the × or a click on the dimmed backdrop closes the dialog.
+2. The same menu carries size, language and prompt: 「普通 / 详细」 for the tier, 「跟随 / 中文 / 英文」 to pin the language, and 「基准 / 角色版」 to compare the two built-in prompts; all are local preferences and land in the same `config`.
+3. The menu's last row, 「设置」, opens the 「速览设置」 dialog to edit the 基准 prompt (with one-click restore default; 角色版 is built in and shown read-only) and tuning parameters. 「保存」 stays disabled until edited, writes changes in place (all live fields, no plugin restart), and turns into disabled 「已保存」; Esc, the × or a click on the dimmed backdrop closes the dialog.
 4. Switch modes as needed (the choice lives in **the profile directory's** `cordis.patch.yml`, in the `config` of its `- id: interpreter` row, written back by the UI through DSH's config API. Model, mode, length tier, language, prompt and length bounds are DSH live fields: a save takes effect in place without restarting the plugin, so rewrites in progress are not interrupted):
 
 | Mode | Behavior |
@@ -187,8 +190,9 @@ For day-to-day tuning there is no file to edit: the 「速览设置」 dialog be
 | `capChars` | `900` | Ceiling on the summary's own length: when the ratio's share exceeds it, the ceiling wins (short answers still keep at least 150 characters) |
 | `length` | `normal` | Length tier: `normal` / `detailed`. `detailed` carries its own ratio and ceiling (0.5 / 1600) and overrides `ratio` and `capChars`; `normal` uses the configured values |
 | `language` | `auto` | Language of the 速览: `auto` (follow the original) / `zh` (always Chinese) / `en` (always English); a fixed language wins even when the original is in another one |
+| `variant` | `baseline` | Built-in prompt: `baseline` (基准) / `roles` (角色版, experimental). A custom `prompt` replaces `baseline` only |
 | `temperature` | `0.3` | Sampling temperature for the rewrite call |
-| `prompt` | Built-in | Custom rewrite instruction to adjust the output style |
+| `prompt` | Built-in | Your own rewrite instruction, replacing the 基准 prompt. It is written to the row only when it differs from the built-in; a verbatim copy of an earlier release's built-in prompt is recognised, treated as today's built-in, and dropped from the row on the next save |
 | `dailyTokenCap` | `0` | Tokens automatic mode may spend per local day (`0` = no ceiling; the count resets when the plugin restarts and includes manual generations). Over it, automation stops but manual clicks still generate |
 
 ### Model Selection
@@ -197,7 +201,7 @@ Effective summarization relies on **explanatory clarity and information restruct
 
 ### Cost & Privacy
 
-* **Billing & Caching**: Each rewrite is a standalone model call. If the initial draft exceeds 1.5× the target length budget, a second compression pass is executed automatically (the displayed token usage reflects the sum of both calls). Results are cached by model, session, sequence number, length tier and language; reopening a block is free, a new model, tier or language rewrites afresh, and switching back to a previous combination reuses its results.
+* **Billing & Caching**: Each rewrite is a standalone model call. If the initial draft exceeds 1.5× the target length budget, or a 角色版 draft fails the layout check, a second pass runs automatically on the draft (the displayed token usage reflects the sum of both calls). Results are cached by model, session, sequence number, length tier, language and built-in prompt; reopening a block is free, a new model, tier, language or prompt rewrites afresh, and switching back to a previous combination reuses its results.
 * **Automatic-Mode Guard**: With `dailyTokenCap` above 0, the plugin counts the tokens its own rewrites spend today (manual generations included) and stops automatic rewriting at the ceiling, leaving one line in that turn that opens into the usage and a manual generate action. Manual clicks are never capped, and tomorrow starts afresh. The count lives in memory and restarts from zero with the plugin, so it is a runaway brake, not a bill.
 * **Data Boundary**: No data is uploaded anywhere except sending the finalized turn response to your configured rewrite provider.
 
