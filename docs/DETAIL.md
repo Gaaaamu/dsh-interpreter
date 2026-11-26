@@ -12,8 +12,12 @@ Project page: [dsh-interpreter](https://github.com/Gaaaamu/dsh-interpreter)
 - **Model**: the 「模型」 row lists the providers and models configured in DSH. No model is bundled, and nothing is generated until you pick one.
 - **Length**: 「详略」 switches between 「普通」 and 「详细」 in one click. This block is rewritten at the new tier, other blocks follow the setting, and any block opened later uses it. Each tier keeps its own cache, so switching back and forth is free. 普通 uses the configured ratio and ceiling; 详细 uses 0.5 / 1600 instead.
 - **Language**: 「语言」 picks between 「跟随」, 「中文」 and 「英文」; the default follows the original reply. A fixed language also governs the tightening pass when the draft runs over budget. Each choice keeps its own cache.
-- **Prompt**: 「提示词」 switches between two built-in prompts. 「基准」 is the long-standing one, and a prompt edited in the settings dialog applies to it (the row then reads 「自定义」). 「角色版（实验）」 is written to be read in half a minute: its prompt decides only what to keep (a table of passed checks becomes one sentence, an explanation keeps only its core idea, long lists keep their key items), and the layout is decided in code: a reply with three or more sections becomes 2–4 headed blocks in its own order, anything else one opening sentence and a few points; code then checks the draft's layout and sends a faulty one back once with what to fix. Each keeps its own cache, so the two can be compared on the same reply at one rewrite each.
-- Folded, the block is one row: 「› 速览 · first sentence」. Expanded, the bottom-right corner shows the tokens this rewrite cost, copies the whole Markdown, and discards the result to redo it.
+- **Prompt**: 「提示词」 switches between two built-in prompts. 「基准」 is the long-standing one, and a prompt edited in the settings dialog applies to it (the row then reads 「自定义」). 「角色版（实验）」 is written to be read in half a minute: its prompt decides only what to keep (a table of passed checks becomes one sentence, an explanation keeps only its core idea, long lists keep their key items), and the layout is decided in code: a reply with three or more sections becomes 2–4 headed blocks in its own order, anything else one opening sentence and a few points; a reply that ends by asking the reader puts those questions, verbatim, in the first block after the conclusion. Code then checks the draft's layout (opening sentence first, the right number of blocks, no category words as headings, no line packing several points, no block shredded into too many items, no bare label line such as 「常用组合：」) and sends a faulty one back once with what to fix; the draft with fewer faults wins. Each keeps its own cache, so the two can be compared on the same reply at one rewrite each.
+- Both prompts notice a reply that ends by asking the reader: 基准 is told no layout, but it is told to keep those questions verbatim at the end of the 速览.
+- Folded, the block is one row: 「› 速览 · first sentence」. Expanded, the bottom-right corner shows the tokens this rewrite cost, copies the whole Markdown, and discards the result to redo it. Hovering the token count shows input (with cache hits), output (with thinking) and total, and one line on how it was made: prompt, layout, draft size, number of calls, and which draft was kept.
+- **How it was made**: once a rewrite has finished, the `⋯` menu gains 「复制生成过程」, which copies the full record as Markdown: the budget, the layout code decided, each call's instruction and the problems code found, each call's tokens, and the first draft when a second call replaced it.
+- **English counted in words**: length is measured by display width (a CJK character counts 1, a letter or half-width symbol half), and an English reply is told its budget in words. English no longer gets half the room a character count would leave it.
+- **Long waits say how long**: after 10 seconds, 「整理中」 is followed by 「已等 45 秒」, so a slow rewrite can be told from a stuck one.
 
 ## The settings dialog
 
@@ -32,7 +36,7 @@ The menu's last row, 「设置」, opens 「速览设置」 as a small panel ove
 
 ## Cost and boundaries
 
-- Each generation is one model call. If the result exceeds 1.5× the target length, or a 角色版 draft fails the layout check, the draft is reworked once more and both calls' tokens are shown.
+- Each generation is one model call. If the result exceeds 1.5× the target length, or a 角色版 draft fails the layout check, the draft is reworked once more and both calls' tokens are shown. That second pass only edits a draft by instruction, so it runs at the lightest reasoning effort the model offers (`off`, `minimal` or `low`, whichever comes first).
 - Results are cached per session, turn, model, length tier, language, and built-in prompt: expanding again costs nothing, switching any of them regenerates, and switching back hits the cache.
 - Only the reply already stored for this turn is sent to the model you picked. Nothing is uploaded elsewhere, the original reply is not modified, and the session log gains no events.
 - With `dailyTokenCap` set, automatic rewriting stops once today's spend (manual generations included) reaches the ceiling and leaves one line in the block; clicking 「速览」 by hand is never capped, and tomorrow starts afresh. The count lives in memory only and resets with the plugin: it is a runaway brake, not a bill.
@@ -46,7 +50,7 @@ In the profile's `cordis.patch.yml`, under the `- id: interpreter` row's `config
 | `minChars` | `400` | Replies shorter than this are skipped |
 | `maxChars` | `40000` | Replies longer than this are skipped |
 | `ratio` | `0.35` | Target length as a share of the original |
-| `capChars` | `900` | Upper bound for the condensed length |
+| `capChars` | `900` | Upper bound for the condensed length, by display width (a letter or half-width symbol counts half) |
 | `length` | `normal` | Length tier: `normal` / `detailed`. `detailed` carries its own ratio and ceiling (0.5 / 1600) and overrides `ratio` and `capChars`; `normal` uses the configured values |
 | `language` | `auto` | Language of the 速览: `auto` follows the original, `zh` or `en` pins one |
 | `variant` | `baseline` | Built-in prompt: `baseline` (基准) / `roles` (角色版, experimental) |
