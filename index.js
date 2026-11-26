@@ -397,10 +397,20 @@ const MAX_SEMICOLONS = 1
  */
 const MAX_ITEM_SEMICOLONS = 2
 
-/** A heading's words without Markdown marks or a trailing colon, short enough to quote. */
+/** Characters of a heading worth quoting back to the model or the reader. */
+const MAX_TITLE_CHARS = 24
+
+/**
+ * A heading's words without Markdown marks or a trailing colon, short enough
+ * to quote. A long English heading is cut after a whole word, so the model is
+ * not shown 「Create the project di…」.
+ */
 function plainTitle(raw) {
   const title = raw.replace(/[*_`]/g, '').replace(/[：:]\s*$/, '').trim()
-  return title.length > 24 ? `${title.slice(0, 24)}…` : title
+  if (title.length <= MAX_TITLE_CHARS) return title
+  const cut = title.slice(0, MAX_TITLE_CHARS)
+  const space = /\s/.test(title[MAX_TITLE_CHARS]) ? MAX_TITLE_CHARS : cut.lastIndexOf(' ')
+  return `${space > MAX_TITLE_CHARS / 2 ? cut.slice(0, space).trimEnd() : cut}…`
 }
 
 /**

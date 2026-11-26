@@ -329,6 +329,28 @@ test('an English answer is measured by width and told its budget in words', asyn
   await h.cleanup()
 })
 
+test('a long English heading is quoted to the model cut after a whole word', async () => {
+  const prompts = []
+  const h = await host(async function* (request) {
+    prompts.push(request.messages[0].content[0].text)
+    yield { type: 'text-delta', text: '短' }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }, { config: { variant: 'roles' } })
+  const body = Array.from({ length: 300 }, (_, at) => `word${at % 10}`).join(' ')
+  h.setLog([{
+    ...answer(),
+    text: [
+      '## 1. Create the project directory and venv', body,
+      '## 2. Compile the lock file with pip-tools', body,
+      '## Common pitfalls', body,
+    ].join('\n\n'),
+  }])
+  const result = await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.deepEqual(result.trace.outline.sections, ['1. Create the project…', '2. Compile the lock file…', 'Common pitfalls'])
+  assert.match(prompts[0], /「1\. Create the project…」、「2\. Compile the lock file…」、「Common pitfalls」/)
+  await h.cleanup()
+})
+
 test('a question written into the answer as raw markup reaches the model in words', async () => {
   const prompts = []
   const echo = async function* (request) {
