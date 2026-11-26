@@ -60,6 +60,8 @@ async function host(model, options = {}) {
     llm: {
       listProviders: () => [{ id: 'p' }],
       listModels: async () => options.models ?? [{ id: 'm' }, { id: 'm2' }],
+      // Like the Host: the exact model's record carries reasoning; the list above does not.
+      ...(options.modelInfo === undefined ? {} : { resolveModelInfo: async (provider, model) => options.modelInfo[model] }),
       async *stream(request) {
         state.calls += 1
         state.models.push(request.model)
@@ -802,11 +804,14 @@ test('a 角色版 draft laid out wrong goes back once with what to fix', async (
 test('a 角色版 line that packs several points goes back to be split', async () => {
   const cases = [
     // Points strung together with semicolons in one item.
-    [`${BLOCKED}\n- 强缓存直接用本地副本；协商缓存问一次；都没有就回源`, /有 1 处把几件事塞进了一段或一条：「强缓存直接用本地副本；协商缓存问…」（3 件）。拆成要点，一条只说一件事，不用分号串；拆出来的要点留在原来那块里，不要为它们新加小标题。/],
+    [`${BLOCKED}\n- 强缓存直接用本地副本；协商缓存问一次；都没有就回源`, /有 1 处把几件事塞进了一段或一条：「强缓存直接用本地副本；协商缓存问…」（3 件）。拆成要点，一条只说一件事、不超过 100 字，不用分号串；拆出来的要点留在原来那块里，不要为它们新加小标题。/],
     // A paragraph of four sentences.
     [`${BLOCKED}\n\n一句。二句。三句。四句。`, /「一句。二句。三句。四句。」（4 件）/],
     // An item of three sentences, with no semicolon at all.
     [`${BLOCKED}\n- 一句。二句。三句。`, /「一句。二句。三句。」（3 件）/],
+    // A paragraph of two long sentences is a wall by its length alone, and so is a long item.
+    [`${BLOCKED}\n\n${'长'.repeat(70)}。${'句'.repeat(60)}。`, /「长{16}…」（132 字）/],
+    [`${BLOCKED}\n- ${'项'.repeat(110)}`, /「项{16}…」（110 字）/],
     // Many packed lines go back as one instruction that quotes a few of them.
     [`${BLOCKED}${'\n- 甲。乙。丙。'.repeat(5)}`, /有 5 处把几件事塞进了一段或一条：(「甲。乙。丙。」（3 件）){3}等。/],
   ]
@@ -864,13 +869,25 @@ test('the second pass runs at the lightest effort the model offers', async () =>
     efforts.push(request.reasoningEffort)
     yield { type: 'text-delta', text: call === 1 ? flat : BLOCKED }
     yield { type: 'finish', reason: { kind: 'stop' } }
-  }, { config: { variant: 'roles' }, models: [{ id: 'm', reasoning }] })
+  }, { config: { variant: 'roles' }, modelInfo: { m: { id: 'm', name: 'M', reasoning } } })
   h.setLog([{ ...answer(), text: SECTIONED }])
   let result = await h.rewrite({ sessionId: 's', seq: 1 }).done
   // The draft keeps the model's own effort; the repair edits it at the lightest.
   assert.deepEqual(efforts, [undefined, 'low'])
   assert.equal(result.trace.calls[1].effort, 'low')
   assert.equal(result.text, BLOCKED)
+  await h.cleanup()
+
+  // An older Host with no exact-model call: the list is read instead.
+  efforts.length = 0
+  h = await host(async function* (request, call) {
+    efforts.push(request.reasoningEffort)
+    yield { type: 'text-delta', text: call === 1 ? flat : BLOCKED }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }, { config: { variant: 'roles' }, models: [{ id: 'm', reasoning: { efforts: [{ id: 'minimal', name: '最低' }, { id: 'low', name: '低' }] } }] })
+  h.setLog([{ ...answer(), text: SECTIONED }])
+  await h.rewrite({ sessionId: 's', seq: 1 }).done
+  assert.deepEqual(efforts, [undefined, 'minimal'])
   await h.cleanup()
 
   // A model that lists no efforts gets none: the call runs at its default.
@@ -910,7 +927,8 @@ test('a 角色版 repair is kept only when its layout is no worse', async () => 
 
   // A tightening pass that drops the headings loses to the longer draft that kept them.
   prompts = []
-  const long = `结论。\n\n#### 两层缓存\n- ${'y'.repeat(1400)}\n\n#### 怎么配\n- 二`
+  // Many short items, none of them a wall: over budget, nothing else wrong.
+  const long = `结论。\n\n#### 两层缓存${`\n- ${'y'.repeat(90)}`.repeat(16)}\n\n#### 怎么配\n- 二`
   h = await rolesHost([long, '结论。'], prompts)
   h.setLog([{ ...answer(), text: SECTIONED }])
   result = await h.rewrite({ sessionId: 's', seq: 1 }).done

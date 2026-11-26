@@ -442,8 +442,8 @@ function layoutCheck(draft, outline) {
   const problems = layoutProblems(draft, outline)
   const packed = packedLines(draft)
   if (packed.length > 0) {
-    const quoted = packed.slice(0, MAX_QUOTED).map((line) => `「${line.quote}」（${line.points} 件）`).join('')
-    problems.push(`有 ${packed.length} 处把几件事塞进了一段或一条：${quoted}${packed.length > MAX_QUOTED ? '等' : ''}。拆成要点，一条只说一件事，不用分号串；拆出来的要点留在原来那块里，不要为它们新加小标题。`)
+    const quoted = packed.slice(0, MAX_QUOTED).map((line) => `「${line.quote}」（${line.size}）`).join('')
+    problems.push(`有 ${packed.length} 处把几件事塞进了一段或一条：${quoted}${packed.length > MAX_QUOTED ? '等' : ''}。拆成要点，一条只说一件事、不超过 ${MAX_ITEM_CHARS} 字，不用分号串；拆出来的要点留在原来那块里，不要为它们新加小标题。`)
   }
   return { problems, faults: problems.length + Math.max(0, packed.length - 1) }
 }
@@ -502,14 +502,21 @@ function leadIns(draft) {
   return found
 }
 
+/** Characters a paragraph may run to, about three lines of the block, before it is a wall. */
+const MAX_PARAGRAPH_CHARS = 120
+
+/** Characters one list item may run to. */
+const MAX_ITEM_CHARS = 100
+
 /**
  * The prose lines of a draft that pack several points into one: a paragraph
- * of more than {@link MAX_SENTENCES} sentences, a list item of more than
- * {@link MAX_ITEM_SENTENCES}, or any line chaining points with semicolons.
- * Code, headings and table rows are not prose and are skipped, and inline code
- * is blanked first so a `;` inside a header value does not count.
+ * of more than {@link MAX_SENTENCES} sentences or {@link MAX_PARAGRAPH_CHARS}
+ * characters, a list item of more than {@link MAX_ITEM_SENTENCES} or
+ * {@link MAX_ITEM_CHARS}, or any line chaining points with semicolons. Code,
+ * headings and table rows are not prose and are skipped, and inline code is
+ * blanked first so a `;` inside a header value does not count.
  * @param draft - the model's 速览.
- * @returns each packed line, quoted short, with how many points it holds.
+ * @returns each packed line, quoted short, with what makes it too much.
  */
 function packedLines(draft) {
   const packed = []
@@ -527,9 +534,10 @@ function packedLines(draft) {
     const semicolons = (words.match(/[；;]/g) ?? []).length
     const points = words.split(/[。！？；;!?]|\.(?=\s|$)/).filter((piece) => /[^\s*_>]/.test(piece)).length
     const item = marker !== null
-    if (semicolons > MAX_SEMICOLONS || points > (item ? MAX_ITEM_SENTENCES : MAX_SENTENCES)) {
-      const plain = body.replace(/[*_>`]/g, '').trim()
-      packed.push({ quote: plain.length > 16 ? `${plain.slice(0, 16)}…` : plain, points, item })
+    const plain = body.replace(/[*_>`]/g, '').trim()
+    const chained = semicolons > MAX_SEMICOLONS || points > (item ? MAX_ITEM_SENTENCES : MAX_SENTENCES)
+    if (chained || plain.length > (item ? MAX_ITEM_CHARS : MAX_PARAGRAPH_CHARS)) {
+      packed.push({ quote: plain.length > 16 ? `${plain.slice(0, 16)}…` : plain, size: chained ? `${points} 件` : `${plain.length} 字` })
     }
   }
   return packed
@@ -781,9 +789,11 @@ export function apply(ctx, config) {
   const efforts = new Map()
 
   /**
-   * The lightest reasoning effort the rewrite model offers, read from the
-   * model list once per model. Nothing where the model lists no efforts or
-   * the list cannot be read: the call then runs at the model's own default.
+   * The lightest reasoning effort the rewrite model offers, read once per
+   * model. The model list DeepSeek Harness hands plugins leaves reasoning out,
+   * so the exact model's own record is asked first, and the list only where an
+   * older Host has no such call. Nothing where the model offers no efforts or
+   * neither can be read: the call then runs at the model's own default.
    * @param options - the settings in force for this call.
    */
   async function lightEffort(options) {
@@ -791,8 +801,10 @@ export function apply(ctx, config) {
     if (!efforts.has(key)) {
       let found = null
       try {
-        const models = await ctx.llm.listModels(options.provider)
-        const offered = (models.find((model) => model.id === options.model)?.reasoning?.efforts ?? []).map((item) => item.id)
+        const info = typeof ctx.llm.resolveModelInfo === 'function'
+          ? await ctx.llm.resolveModelInfo(options.provider, options.model)
+          : (await ctx.llm.listModels(options.provider)).find((model) => model.id === options.model)
+        const offered = (info?.reasoning?.efforts ?? []).map((item) => item.id)
         found = LIGHT_EFFORTS.find((id) => offered.includes(id)) ?? null
       } catch {
         found = null
