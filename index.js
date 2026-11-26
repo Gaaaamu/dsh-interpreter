@@ -764,29 +764,48 @@ export function apply(ctx, config) {
     const variant = variantOf(options)
     const outline = variant === 'roles' ? outlineOf(text, budget) : undefined
     const layout = outline === undefined ? '' : layoutHint(outline)
+    /**
+     * What happened on the way, for the reader who wants to see it: the layout
+     * code decided, each call and what code found in its draft, and which draft
+     * was kept. It travels with the result and is cached with it.
+     */
+    const trace = {
+      variant,
+      original: text.length,
+      budget,
+      outline: outline === undefined ? null : outline,
+      hint: layout,
+      calls: [],
+      kept: 1,
+    }
+    const check = (draft) => (outline === undefined ? [] : layoutProblems(draft, outline))
     const first = await ask(`${text}\n\n---\n原文 ${text.length} 字，速览请控制在 ${budget} 字以内。${layout}${language}`, sessionId, options, signal)
     const over = first.text.length > budget * 1.5
-    const problems = outline === undefined ? [] : layoutProblems(first.text, outline)
-    if (!over && problems.length === 0) return first
+    const problems = check(first.text)
+    trace.calls.push({ kind: 'draft', chars: first.text.length, over, problems, usage: first.usage })
+    if (!over && problems.length === 0) return { ...first, trace }
     /** Over budget alone keeps the long-standing words; a layout fault says what to fix. */
-    const instruction = problems.length === 0
+    const kind = problems.length === 0 ? 'tighten' : 'repair'
+    const instruction = kind === 'tighten'
       ? `下面这段已经压过一遍，但还有 ${first.text.length} 字，超过 ${budget} 字的上限。${TIGHTEN[variant]}`
       : `下面这段速览要再改一遍：${problems.join('')}${over ? `另外它还有 ${first.text.length} 字，超过 ${budget} 字的上限，${TIGHTEN[variant]}` : '内容不要增减。'}`
+    trace.firstDraft = first.text
     let second
     try {
       second = await ask(`${instruction}${language}\n\n${first.text}`, sessionId, options, signal)
-    } catch {
+    } catch (error) {
       // The first draft is already paid for and usable: a failed second pass
       // must not throw it away.
-      return first
+      trace.calls.push({ kind, instruction, failed: error instanceof Error ? error.message : String(error) })
+      return { ...first, trace }
     }
     /** Fewer layout faults wins, then the shorter; a tie keeps the first. */
-    const faults = (draft) => (outline === undefined ? 0 : layoutProblems(draft.text, outline).length)
-    const secondFaults = faults(second)
-    const firstFaults = problems.length
-    const better = secondFaults < firstFaults || (secondFaults === firstFaults && second.text.length < first.text.length)
+    const left = check(second.text)
+    trace.calls.push({ kind, instruction, chars: second.text.length, problems: left, usage: second.usage })
+    const better = left.length < problems.length || (left.length === problems.length && second.text.length < first.text.length)
+    trace.kept = better ? 2 : 1
     const best = better ? second : first
-    return { text: best.text, usage: mergeUsage(first.usage, second.usage) }
+    return { text: best.text, usage: mergeUsage(first.usage, second.usage), trace }
   }
 
   /**
@@ -851,7 +870,7 @@ export function apply(ctx, config) {
         if (options.provider === '' || options.model === '') return { status: 'error', message: 'no configured model' }
         const outcome = await limited(shared, () => rewrite(text, sessionId, options, shared))
         recordSpend(outcome.usage)
-        return { status: 'ok', text: outcome.text, usage: outcome.usage }
+        return { status: 'ok', text: outcome.text, usage: outcome.usage, trace: outcome.trace }
       } catch (error) {
         return { status: 'error', message: error instanceof Error ? error.message : String(error) }
       }

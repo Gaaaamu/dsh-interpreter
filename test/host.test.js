@@ -826,6 +826,31 @@ test('a 角色版 repair is kept only when its layout is no worse', async () => 
   await h.cleanup()
 })
 
+test('a rewrite comes back with the record of how it was made', async () => {
+  const prompts = []
+  const flat = '结论。\n\n- 一\n- 二'
+  const h = await rolesHost([flat, BLOCKED], prompts)
+  h.setLog([{ ...answer(), text: SECTIONED }])
+  const result = await h.rewrite({ sessionId: 's', seq: 1 }).done
+  const { trace } = result
+  assert.equal(trace.variant, 'roles')
+  assert.equal(trace.budget, 900)
+  assert.deepEqual(trace.outline.sections, ['一、强缓存', '二、协商缓存', '三、怎么配'])
+  assert.equal(trace.outline.blocks, true)
+  assert.match(trace.hint, /原文分 3 节/)
+  assert.equal(trace.calls.length, 2)
+  assert.equal(trace.calls[0].kind, 'draft')
+  assert.equal(trace.calls[0].problems.length, 1)
+  assert.equal(trace.calls[1].kind, 'repair')
+  assert.deepEqual(trace.calls[1].problems, [])
+  assert.equal(trace.kept, 2)
+  assert.equal(trace.firstDraft, flat)
+  // The record is cached with the text it explains.
+  assert.deepEqual((await h.rewrite({ sessionId: 's', seq: 1 }).done).trace, trace)
+  assert.equal(h.state.calls, 2)
+  await h.cleanup()
+})
+
 test('基准 gets no layout hint and no layout check', async () => {
   const prompts = []
   const h = await host(async function* (request) {
@@ -838,6 +863,8 @@ test('基准 gets no layout hint and no layout check', async () => {
   assert.ok(prompts[0].endsWith('速览请控制在 900 字以内。'))
   assert.equal(result.text, '#### 结论\n- 一')
   assert.equal(h.state.calls, 1)
+  assert.equal(result.trace.outline, null)
+  assert.equal(result.trace.calls.length, 1)
   await h.cleanup()
 })
 

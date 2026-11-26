@@ -403,13 +403,16 @@ window.__ModuleLoader__.load({
       const out = [];
       let last = 0;
       let match;
-      INLINE.lastIndex = 0;
-      while ((match = INLINE.exec(text)) !== null) {
+      // Its own cursor: bold and italic read their words with this same
+      // function, and a shared one would send the outer run back to the start.
+      const pattern = new RegExp(INLINE.source, 'g');
+      while ((match = pattern.exec(text)) !== null) {
         if (match.index > last) out.push(text.slice(last, match.index));
         const token = match[0];
         const key = `${prefix}-${match.index}`;
         let used = token.length;
-        if (token.startsWith('**')) out.push(h('strong', { key }, token.slice(2, -2)));
+        // Code, links and the like inside bold keep their own look.
+        if (token.startsWith('**')) out.push(h('strong', { key }, inline(token.slice(2, -2), key)));
         else if (token.startsWith('`')) out.push(h('code', { key }, token.slice(1, -1)));
         else if (token.startsWith('[')) {
           const link = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(token);
@@ -432,7 +435,7 @@ window.__ModuleLoader__.load({
           used = href.length;
           out.push(h('a', { key, href, target: '_blank', rel: 'noopener noreferrer' },
             linkGlyph(href, key), href));
-        } else out.push(h('em', { key }, token.slice(1, -1)));
+        } else out.push(h('em', { key }, inline(token.slice(1, -1), key)));
         last = match.index + used;
       }
       if (last < text.length) out.push(text.slice(last));
@@ -782,6 +785,72 @@ window.__ModuleLoader__.load({
       if (typeof count !== 'number' || !Number.isFinite(count) || count <= 0) return '';
       if (count < 1000) return String(count);
       return `${Math.round((count / 1000) * 10) / 10}k`;
+    }
+
+    /** What each call of a rewrite was for, in the reader's words. */
+    const CALL_LABEL = { draft: '初稿', tighten: '再压一遍', repair: '按排版问题重写' };
+
+    /** The layout code decided, or that it decided none. */
+    function layoutWords(trace) {
+      const outline = trace.outline;
+      if (outline === null || outline === undefined) return '不由代码定版式';
+      const sections = outline.sections.length;
+      const read = sections === 0 ? '原文没有分节' : `原文 ${sections} 节`;
+      return `${outline.blocks ? '分块' : '不分块'}（${read}${outline.asks ? '，末尾在等读者决定' : ''}）`;
+    }
+
+    /**
+     * One line on how a rewrite was made, for the cost's tooltip: the layout,
+     * how many calls, and which draft was kept.
+     * @param trace - what the Host recorded, or nothing from an older Host.
+     */
+    function traceLine(trace) {
+      if (trace === null || typeof trace !== 'object' || !Array.isArray(trace.calls)) return '';
+      const parts = [VARIANT_LABEL[trace.variant] ?? trace.variant, layoutWords(trace)];
+      const [draft, second] = trace.calls;
+      if (draft !== undefined) {
+        const found = draft.problems?.length ?? 0;
+        parts.push(`初稿 ${draft.chars} 字${draft.over ? '，超预算' : ''}${found > 0 ? `，${found} 处排版问题` : ''}`);
+      }
+      if (second === undefined) parts.push('1 次调用');
+      else if (second.failed !== undefined) parts.push(`${CALL_LABEL[second.kind] ?? second.kind}失败，用初稿`);
+      else parts.push(`${CALL_LABEL[second.kind] ?? second.kind}后 ${second.chars} 字，用${trace.kept === 2 ? '第二稿' : '初稿'}`);
+      return parts.join(' · ');
+    }
+
+    /**
+     * The whole record of a rewrite as Markdown, to copy and read side by side
+     * with the 速览: the budget, the layout and the words that told the model
+     * about it, each call with what code found in its draft, and the first draft
+     * when a second call replaced or tried to replace it.
+     * @param trace - what the Host recorded.
+     */
+    function traceText(trace) {
+      if (trace === null || typeof trace !== 'object' || !Array.isArray(trace.calls)) return '';
+      const lines = [
+        '# 速览生成过程',
+        '',
+        `- 写法：${VARIANT_LABEL[trace.variant] ?? trace.variant}`,
+        `- 原文 ${trace.original} 字，预算 ${trace.budget} 字`,
+        `- 版式：${layoutWords(trace)}`,
+      ];
+      const sections = trace.outline?.sections ?? [];
+      if (sections.length > 0) lines.push(`- 原文各节：${sections.map((title) => `「${title}」`).join('、')}`);
+      if (trace.hint) lines.push(`- 告诉模型的版式：${trace.hint}`);
+      trace.calls.forEach((call, at) => {
+        lines.push('', `## 第 ${at + 1} 次调用：${CALL_LABEL[call.kind] ?? call.kind}`, '');
+        if (call.instruction) lines.push(`- 指令：${call.instruction}`);
+        if (call.failed !== undefined) {
+          lines.push(`- 失败：${call.failed}`);
+          return;
+        }
+        lines.push(`- 结果 ${call.chars} 字${call.over ? '，超过预算 1.5 倍' : ''}`);
+        lines.push(`- 代码查出的排版问题：${call.problems.length === 0 ? '无' : call.problems.join(' ')}`);
+        if (call.usage) lines.push(`- tokens：输入 ${call.usage.inputTokens} · 输出 ${call.usage.outputTokens} · 合计 ${call.usage.totalTokens}`);
+      });
+      lines.push('', `最后用的是${trace.kept === 2 ? '第二稿' : '初稿'}。`);
+      if (typeof trace.firstDraft === 'string') lines.push('', '## 初稿全文', '', trace.firstDraft);
+      return lines.join('\n');
     }
 
     /** The mark that says which row is in force, without a sentence saying so. */
@@ -1354,7 +1423,7 @@ window.__ModuleLoader__.load({
               setOpen(false);
               return;
             }
-            if (result.status === 'ok') setPhase({ kind: 'ready', text: result.text, usage: result.usage });
+            if (result.status === 'ok') setPhase({ kind: 'ready', text: result.text, usage: result.usage, trace: result.trace });
             else if (result.status === 'skip') setPhase({ kind: result.reason === 'too-long' ? 'toolong' : 'none' });
             else setPhase({ kind: 'failed', message: readableError(result.message ?? '') });
           })
@@ -1418,11 +1487,13 @@ window.__ModuleLoader__.load({
 
       /** What one rewrite cost, written in the same small voice as the icon. */
       const usage = ready ? phase.usage : undefined;
+      /** How it was made, under what it cost: a line, never a panel. */
+      const made = ready ? traceLine(phase.trace) : '';
       const cost = usage === undefined
         ? null
         : h('span', {
             style: COST,
-            title: `输入 ${usage.inputTokens} · 输出 ${usage.outputTokens} · 合计 ${usage.totalTokens} tokens`,
+            title: `输入 ${usage.inputTokens} · 输出 ${usage.outputTokens} · 合计 ${usage.totalTokens} tokens${made === '' ? '' : `\n${made}`}`,
           }, `${formatTokens(usage.totalTokens)} tokens`);
 
       /**
@@ -1546,6 +1617,19 @@ window.__ModuleLoader__.load({
           valueRow('variant', '提示词', gate === null ? '' : variantLabel(effectiveVariant(gate), false), 'variant'),
           valueRow('model', '模型', modelLabel(), 'model'),
           h('div', { key: 'split', style: DIVIDER }),
+          // Only a finished rewrite has a record to copy.
+          ready && traceText(phase.trace) !== ''
+            ? h('button', {
+                key: 'trace',
+                style: { ...ITEM, ...(hover === 'trace' ? ITEM_HOVER : null) },
+                onMouseEnter: () => setHover('trace'),
+                onMouseLeave: () => setHover(null),
+                onClick: () => {
+                  copyText(traceText(phase.trace)).then((done) => setCopyState(done ? 'copied' : 'failed'));
+                  closeMenu();
+                },
+              }, h('span', { style: ITEM_TEXT }, '复制生成过程'))
+            : null,
           h('button', {
             key: 'settings',
             style: { ...ITEM, ...(hover === 'settings' ? ITEM_HOVER : null) },
@@ -2124,7 +2208,7 @@ window.__ModuleLoader__.load({
 
     // The test suite reaches the pure helpers through this hook; the app never sets it.
     if (typeof window.__DSH_INTERPRETER_TEST__ === 'function') {
-      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText, draftOf, readDraft, resolveModelLabel });
+      window.__DSH_INTERPRETER_TEST__({ blocks, inline, safeHref, tableCells, effectiveMode, effectiveLength, effectiveLanguage, renderBlock, readReply, headline, probeTurn, copyText, draftOf, readDraft, resolveModelLabel, traceLine, traceText });
     }
 
     return {
